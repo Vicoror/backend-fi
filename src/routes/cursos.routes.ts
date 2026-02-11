@@ -37,7 +37,7 @@ router.get('/admin', async (_req, res) => {
 })
 
 // CREAR
-router.post('/', async (req, res) => {
+router.post('/cursos', async (req, res) => {
   const body = req.body as CursoInput
 
   const count = await prisma.course.count({
