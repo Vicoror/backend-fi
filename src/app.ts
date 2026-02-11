@@ -10,14 +10,12 @@ const app = express();
 // CORS - Configuración para aceptar requests del frontend
 app.use(cors({
   origin: function (origin, callback) {
-    // Lista de orígenes permitidos
     const allowedOrigins = [
       'http://localhost:5173',
       'https://francaisintelligent.vercel.app',
       'https://francaisintelligentback.vercel.app',
     ];
     
-    // Permitir requests sin origen (Postman, mobile apps)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.includes(origin)) {
@@ -35,10 +33,19 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// Rutas
-app.use('/auth', authRoutes);
-app.use('/checkout', checkoutRoutes);
-app.use('/cursos', cursosRoutes);
+// ✅ RUTA RAÍZ (AGREGA ESTO)
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Français Intelligent API',
+    status: 'online',
+    endpoints: {
+      health: '/health',
+      auth: '/auth',
+      cursos: '/cursos',
+      checkout: '/checkout'
+    }
+  });
+});
 
 // Health check
 app.get('/health', (_req, res) => {
@@ -49,12 +56,10 @@ app.get('/health', (_req, res) => {
   });
 });
 
-// Para desarrollo local
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => {
-    console.log(`🚀 Backend ejecutándose en http://localhost:${PORT}`);
-  });
-}
+// Rutas
+app.use('/auth', authRoutes);
+app.use('/checkout', checkoutRoutes);
+app.use('/cursos', cursosRoutes);
+
 
 export default app;

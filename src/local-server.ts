@@ -1,7 +1,10 @@
-import app from './app'
+import app from './app';
 
-const PORT = process.env.PORT || 3000
+const PORT = process.env.PORT || 3000;
 
+// ✅ SOLO AQUÍ DEBE ESTAR app.listen()
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`)
-})
+  console.log(`🚀 Servidor local: http://localhost:${PORT}`);
+  console.log(`📁 Health check: http://localhost:${PORT}/health`);
+  console.log(`📁 API Root: http://localhost:${PORT}/`);
+});
