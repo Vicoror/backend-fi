@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { prisma } from '../lib/prisma'
-import type { CursoInput } from '../../../shared/types/curso'
+import type { CursoInput } from '../types/curso'
 
 
 const router = Router()
