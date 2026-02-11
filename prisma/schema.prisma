@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PaymentType {
+  CARD
+  OXXO
+}
+
+model User {
+  id       String     @id @default(uuid())
+  folio    String     @unique
+  email    String     @unique
+  password String
+  role     Role
+  status   UserStatus @default(ACTIVE)
+
+  profile       Profile?
+  purchases     Purchase[]
+  enrollments   Enrollment[]
+  coursesTaught Course[]     @relation("TeacherCourses")
+  payments      Payment[]
+
+  createdAt DateTime @default(now())
+}
+
+model Profile {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  nombre          String
+  apellidoPaterno String
+  apellidoMaterno String?
+  telefono        String?
+}
+
+model Course {
+  id       String @id @default(uuid())
+  code     String @unique
+  nivel    String
+  subnivel String?
+
+  cupoMaximo       Int
+  alumnosInscritos Int @default(0)
+
+  precio   Int
+  horario  String
+  dias     String
+  duracion String
+
+  inicio DateTime
+  fin    DateTime
+
+  activo Boolean @default(true)
+
+  teacherId String?
+  teacher   User? @relation("TeacherCourses", fields: [teacherId], references: [id])
+
+  enrollments Enrollment[]
+  purchases   Purchase[]
+
+  createdAt DateTime @default(now())
+}
+
+
+model Enrollment {
+  id       String @id @default(uuid())
+  userId   String
+  courseId String
+
+  user   User   @relation(fields: [userId], references: [id])
+  course Course @relation(fields: [courseId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, courseId])
+}
+
+model Purchase {
+  id String @id @default(uuid())
+
+  userId   String
+  courseId String
+
+  user   User   @relation(fields: [userId], references: [id])
+  course Course @relation(fields: [courseId], references: [id])
+
+  paymentType PaymentType
+  refunded    Boolean     @default(false)
+
+  stripeSessionId String?
+
+  createdAt DateTime @default(now())
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  userId          String
+  stripeSessionId String   @unique
+  stripePaymentId String?
+  amount          Int
+  currency        String
+  status          String
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
