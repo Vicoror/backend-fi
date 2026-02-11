@@ -4,11 +4,12 @@ import { requireAuth } from '../middlewares/auth.middleware'
 
 const router = Router()
 
-router.get('/test', (req, res) => {
-  res.json({ 
-    message: '✅ Ruta auth funcionando',
-    timestamp: new Date().toISOString()
-  });
-});
+router.post('/login', login)
+
+router.get('/me', requireAuth, (req, res) => {
+  res.json({
+    user: req.user,
+  })
+})
 
 export default router;
