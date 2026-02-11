@@ -44,7 +44,7 @@ app.use('/cursos', cursosRoutes);
 app.get('/health', (_req, res) => {
   res.json({ 
     ok: true, 
-    service: 'francaisintelligent-backend',
+    service: 'francaisintelligentback',
     timestamp: new Date().toISOString()
   });
 });
