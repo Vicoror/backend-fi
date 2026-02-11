@@ -4,6 +4,7 @@ import cors from 'cors';
 import authRoutes from './routes/auth.routes';
 import checkoutRoutes from './routes/checkout';
 import cursosRoutes from './routes/cursos.routes';
+import registroRoutes from './routes/registro.routes';
 
 const app = express();
 
@@ -60,6 +61,7 @@ app.get('/health', (_req, res) => {
 app.use('/auth', authRoutes);
 app.use('/checkout', checkoutRoutes);
 app.use('/cursos', cursosRoutes);
+app.use('/registro', registroRoutes);
 
 
 export default app;
