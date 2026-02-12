@@ -6,6 +6,7 @@ import checkoutRoutes from './routes/checkout';
 import cursosRoutes from './routes/cursos.routes';
 import registroRoutes from './routes/registro.routes';
 import emailRoutes from './routes/email.routes';
+import webhookRoutes from './routes/webhook.routes';
 
 const app = express();
 
@@ -57,6 +58,8 @@ app.get('/health', (_req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+app.post('/webhook', express.raw({ type: 'application/json' }), webhookRoutes);
 
 // Rutas
 app.use('/auth', authRoutes);

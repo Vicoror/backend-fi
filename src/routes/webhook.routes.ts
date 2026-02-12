@@ -1,13 +1,8 @@
-import { Router } from 'express'
-import { stripeWebhook } from '../controllers/webhook.controller'
+import { Router } from 'express';
+import { stripeWebhook } from '../controllers/webhook.controller';
 
-const router = Router()
+const router = Router();
 
-router.post(
-  '/stripe',
-  // ⚠️ Stripe necesita el body sin parsear
-  require('express').raw({ type: 'application/json' }),
-  stripeWebhook
-)
+router.post('/', stripeWebhook);
 
-export default router
+export default router;
