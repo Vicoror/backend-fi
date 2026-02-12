@@ -5,6 +5,7 @@ import authRoutes from './routes/auth.routes';
 import checkoutRoutes from './routes/checkout';
 import cursosRoutes from './routes/cursos.routes';
 import registroRoutes from './routes/registro.routes';
+import emailRoutes from './routes/email.routes';
 
 const app = express();
 
@@ -62,6 +63,7 @@ app.use('/auth', authRoutes);
 app.use('/checkout', checkoutRoutes);
 app.use('/cursos', cursosRoutes);
 app.use('/registro', registroRoutes);
+app.use('/api', emailRoutes);
 
 
 export default app;

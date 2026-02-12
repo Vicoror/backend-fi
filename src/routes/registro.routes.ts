@@ -86,7 +86,7 @@ router.post('/', async (req, res) => {
           email,
           password: hashedPassword,
           role: 'STUDENT',
-          status: 'ACTIVE'
+          status: 'INACTIVE'
         }
       });
 
