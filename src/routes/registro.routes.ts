@@ -41,18 +41,6 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Verificar si el email ya existe
-    const emailExistente = await prisma.user.findUnique({
-      where: { email }
-    });
-
-    if (emailExistente) {
-      return res.status(409).json({ 
-        success: false, 
-        message: 'El correo electrónico ya está registrado' 
-      });
-    }
-
     // Verificar que el curso existe y tiene cupo
     const curso = await prisma.course.findUnique({
       where: { id: cursoId }
@@ -72,28 +60,24 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Generar folio y contraseña temporal
-    const folio = await generarFolio();
-    const passwordTemporal = Math.random().toString(36).slice(-8);
-    const hashedPassword = await bcrypt.hash(passwordTemporal, 10);
+    // 🔍 BUSCAR SI EL USUARIO YA EXISTE POR EMAIL
+    const usuarioExistente = await prisma.user.findUnique({
+      where: { email },
+      include: { profile: true }
+    });
 
-    // Crear transacción: Usuario + Perfil + Inscripción
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Crear usuario
-      const user = await tx.user.create({
-        data: {
-          folio,
-          email,
-          password: hashedPassword,
-          role: 'STUDENT',
-          status: 'INACTIVE'
-        }
-      });
+    let userId: string;
+    let folio: string;
+    let esNuevoUsuario: boolean;
 
-      // 2. Crear perfil
-      const profile = await tx.profile.create({
+    // 🔄 SI EL USUARIO YA EXISTE → ACTUALIZAR SUS DATOS
+    if (usuarioExistente) {
+      console.log(`📝 Usuario existente encontrado: ${email}`);
+      
+      // Actualizar perfil del usuario existente
+      await prisma.profile.update({
+        where: { userId: usuarioExistente.id },
         data: {
-          userId: user.id,
           nombre,
           apellidoPaterno,
           apellidoMaterno: apellidoMaterno || null,
@@ -101,38 +85,113 @@ router.post('/', async (req, res) => {
         }
       });
 
-      // 3. Crear inscripción
-      const enrollment = await tx.enrollment.create({
+      userId = usuarioExistente.id;
+      folio = usuarioExistente.folio;
+      esNuevoUsuario = false;
+
+      // Verificar si YA ESTÁ INSCRITO en este curso
+      const inscripcionExistente = await prisma.enrollment.findUnique({
+        where: {
+          userId_courseId: {
+            userId: usuarioExistente.id,
+            courseId: curso.id
+          }
+        }
+      });
+
+      if (inscripcionExistente) {
+        // ✅ Ya está inscrito, solo devolvemos los datos
+        return res.status(200).json({
+          success: true,
+          message: 'Ya estás inscrito en este curso',
+          data: {
+            userId: usuarioExistente.id,
+            folio: usuarioExistente.folio,
+            email: usuarioExistente.email,
+            cursoId: curso.id,
+            cursoNombre: `${curso.nivel} ${curso.subnivel || ''}`.trim(),
+            precio: curso.precio,
+            yaInscrito: true
+          }
+        });
+      }
+
+    } else {
+      // 🆕 USUARIO NUEVO → CREARLO COMPLETO
+      console.log(`🆕 Nuevo usuario: ${email}`);
+      
+      folio = await generarFolio();
+      const passwordTemporal = Math.random().toString(36).slice(-8);
+      const hashedPassword = await bcrypt.hash(passwordTemporal, 10);
+
+      const nuevoUsuario = await prisma.user.create({
         data: {
-          userId: user.id,
+          folio,
+          email,
+          password: hashedPassword,
+          role: 'STUDENT',
+          status: 'INACTIVE' // Se activa SOLO después del pago
+        }
+      });
+
+      userId = nuevoUsuario.id;
+
+      // Crear perfil
+      await prisma.profile.create({
+        data: {
+          userId: nuevoUsuario.id,
+          nombre,
+          apellidoPaterno,
+          apellidoMaterno: apellidoMaterno || null,
+          telefono
+        }
+      });
+
+      esNuevoUsuario = true;
+
+      // TODO: Enviar email con credenciales
+      console.log(`🔐 Contraseña temporal para ${folio}: ${passwordTemporal}`);
+    }
+
+    // ➕ CREAR INSCRIPCIÓN (solo si no existía)
+    if (!usuarioExistente || !await prisma.enrollment.findUnique({
+      where: {
+        userId_courseId: {
+          userId,
+          courseId: curso.id
+        }
+      }
+    })) {
+      await prisma.enrollment.create({
+        data: {
+          userId,
           courseId: curso.id
         }
       });
 
-      // 4. Incrementar contador de alumnos inscritos
-      await tx.course.update({
+      // Incrementar contador de alumnos inscritos
+      await prisma.course.update({
         where: { id: curso.id },
         data: {
           alumnosInscritos: { increment: 1 }
         }
       });
+    }
 
-      return { user, profile, enrollment };
-    });
-
-    // TODO: Enviar email con credenciales (passwordTemporal)
-    console.log(`🔐 Contraseña temporal para ${folio}: ${passwordTemporal}`);
-
+    // ✅ RESPUESTA EXITOSA
     res.status(201).json({
       success: true,
-      message: 'Registro exitoso',
+      message: esNuevoUsuario 
+        ? 'Registro exitoso' 
+        : 'Datos actualizados correctamente',
       data: {
-        userId: result.user.id,
-        folio: result.user.folio,
-        email: result.user.email,
+        userId,
+        folio,
+        email,
         cursoId: curso.id,
         cursoNombre: `${curso.nivel} ${curso.subnivel || ''}`.trim(),
-        precio: curso.precio
+        precio: curso.precio,
+        esNuevoUsuario
       }
     });
 
