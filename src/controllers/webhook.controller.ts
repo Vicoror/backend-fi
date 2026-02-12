@@ -105,7 +105,7 @@ async function enviarEmailConfirmacion(userId: string, courseId: string, session
 
     // Enviar email con Resend
     await resend.emails.send({
-      from: 'Français Intelligent <inscripciones@tudominio.com>',
+      from: 'Français Intelligent <vicoror@gmail.com>',
       to: [user.email],
       subject: '🎉 ¡Pago exitoso! Confirmación de inscripción',
       html: `
