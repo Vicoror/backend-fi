@@ -191,6 +191,8 @@ router.post('/', async (req, res) => {
         cursoId: curso.id,
         cursoNombre: `${curso.nivel} ${curso.subnivel || ''}`.trim(),
         precio: curso.precio,
+        dias: curso.dias,       
+        horario: curso.horario,  
         esNuevoUsuario
       }
     });
