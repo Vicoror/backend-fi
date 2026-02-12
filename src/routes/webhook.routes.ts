@@ -1,10 +1,12 @@
 import { Router } from 'express';
-import express from 'express';  // ← IMPORTANTE: importar express
 import { stripeWebhook } from '../controllers/webhook.controller';
 
 const router = Router();
 
-// ⚠️ IMPORTANTE: Usar express.raw para webhooks (body crudo)
-router.post('/', express.raw({ type: 'application/json' }), stripeWebhook);
+// ✅ SOLO POST - Stripe siempre envía POST
+router.post('/', stripeWebhook);
+
+// ❌ ELIMINA CUALQUIER GET - No necesitamos ver el webhook en navegador
+// router.get('/', (req, res) => res.send('Webhook endpoint')); ← NO HAGAS ESTO
 
 export default router;

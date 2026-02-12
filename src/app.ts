@@ -10,9 +10,9 @@ import webhookRoutes from './routes/webhook.routes';
 
 const app = express();
 
-app.use('/webhook', express.raw({ type: 'application/json' }), webhookRoutes);
-
-// CORS - Configuración para aceptar requests del frontend
+// =============================================
+// 1. PRIMERO: CORS (SIEMPRE PRIMERO)
+// =============================================
 app.use(cors({
   origin: function (origin, callback) {
     const allowedOrigins = [
@@ -22,7 +22,6 @@ app.use(cors({
     ];
     
     if (!origin) return callback(null, true);
-    
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     } else {
@@ -35,10 +34,20 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
 }));
 
+// =============================================
+// 2. SEGUNDO: WEBHOOKS (body crudo) - ANTES de express.json()
+// =============================================
+app.use('/webhook', express.raw({ type: 'application/json' }), webhookRoutes);
+
+// =============================================
+// 3. TERCERO: MIDDLEWARES NORMALES
+// =============================================
 app.use(express.json());
 app.use(cookieParser());
 
-// ✅ RUTA RAÍZ (AGREGA ESTO)
+// =============================================
+// 4. RUTAS
+// =============================================
 app.get('/', (req, res) => {
   res.json({
     name: 'Français Intelligent API',
@@ -47,12 +56,12 @@ app.get('/', (req, res) => {
       health: '/health',
       auth: '/auth',
       cursos: '/cursos',
-      checkout: '/checkout'
+      checkout: '/checkout',
+      webhook: '/webhook (POST only)'
     }
   });
 });
 
-// Health check
 app.get('/health', (_req, res) => {
   res.json({ 
     ok: true, 
@@ -61,14 +70,10 @@ app.get('/health', (_req, res) => {
   });
 });
 
-
-// Rutas
 app.use('/auth', authRoutes);
 app.use('/checkout', checkoutRoutes);
 app.use('/cursos', cursosRoutes);
 app.use('/registro', registroRoutes);
 app.use('/api', emailRoutes);
-
-
 
 export default app;
