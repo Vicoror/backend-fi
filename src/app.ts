@@ -10,6 +10,8 @@ import webhookRoutes from './routes/webhook.routes';
 
 const app = express();
 
+app.use('/webhook', express.raw({ type: 'application/json' }), webhookRoutes);
+
 // CORS - Configuración para aceptar requests del frontend
 app.use(cors({
   origin: function (origin, callback) {
@@ -59,7 +61,6 @@ app.get('/health', (_req, res) => {
   });
 });
 
-app.post('/webhook', express.raw({ type: 'application/json' }), webhookRoutes);
 
 // Rutas
 app.use('/auth', authRoutes);
@@ -67,6 +68,7 @@ app.use('/checkout', checkoutRoutes);
 app.use('/cursos', cursosRoutes);
 app.use('/registro', registroRoutes);
 app.use('/api', emailRoutes);
+
 
 
 export default app;

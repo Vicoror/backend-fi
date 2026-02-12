@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { prisma } from '../lib/prisma';
 import { stripe } from '../lib/stripe';
+import { resend } from '../lib/resend';
 
 export async function stripeWebhook(req: Request, res: Response) {
   const sig = req.headers['stripe-signature'] as string;
@@ -18,81 +19,110 @@ export async function stripeWebhook(req: Request, res: Response) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // Manejar diferentes tipos de eventos
-  switch (event.type) {
-    case 'checkout.session.completed':
-      await handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session);
-      break;
-      
-    case 'checkout.session.async_payment_succeeded':
-      await handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session);
-      break;
-      
-    case 'payment_intent.succeeded':
-      console.log('✅ Pago confirmado:', event.data.object.id);
-      break;
-      
-    default:
-      console.log(`📦 Evento no manejado: ${event.type}`);
+  // ✅ SOLO EVENTO DE PAGO EXITOSO
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    
+    console.log('🎯 Pago completado:', session.id);
+    
+    const { userId, courseId } = session.metadata || {};
+
+    if (!userId || !courseId) {
+      console.error('❌ Metadata faltante');
+      return res.status(400).json({ error: 'Metadata faltante' });
+    }
+
+    try {
+      // 1. 🔵 CREAR PAYMENT (registro del pago)
+      const payment = await prisma.payment.create({
+        data: {
+          userId,
+          stripeSessionId: session.id,
+          stripePaymentId: session.payment_intent as string,
+          amount: session.amount_total!,
+          currency: session.currency!,
+          status: 'PAID',
+        },
+      });
+      console.log('✅ Payment creado:', payment.id);
+
+      // 2. 🟢 CREAR PURCHASE (compra del curso)
+      const purchase = await prisma.purchase.create({
+        data: {
+          userId,
+          courseId,
+          paymentType: session.payment_method_types.includes('oxxo') ? 'OXXO' : 'CARD',
+          refunded: false,
+          stripeSessionId: session.id,
+        },
+      });
+      console.log('✅ Purchase creado:', purchase.id);
+
+      // 3. 📈 INCREMENTAR alumnosInscritos (SOLO AQUÍ)
+      const course = await prisma.course.update({
+        where: { id: courseId },
+        data: {
+          alumnosInscritos: { increment: 1 },
+        },
+      });
+      console.log(`✅ Curso actualizado: ahora ${course.alumnosInscritos} inscritos`);
+
+      // 4. 🟢 ACTIVAR ESTUDIANTE (cambiar status a ACTIVE)
+      const user = await prisma.user.update({
+        where: { id: userId },
+        data: { status: 'ACTIVE' },
+      });
+      console.log(`✅ Usuario ${user.folio} activado`);
+
+      // 5. 📧 ENVIAR EMAIL DE CONFIRMACIÓN
+      await enviarEmailConfirmacion(userId, courseId, session);
+
+      console.log('🎉 Proceso completado exitosamente');
+
+    } catch (error) {
+      console.error('❌ Error procesando webhook:', error);
+      return res.status(500).json({ error: 'Error procesando el pago' });
+    }
   }
 
   res.json({ received: true });
 }
 
-async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
-  console.log('🎯 Checkout completado:', session.id);
-
-  const { userId, courseId } = session.metadata || {};
-
-  if (!userId || !courseId) {
-    console.error('❌ Metadata faltante en sesión:', session.id);
-    return;
-  }
-
+// 📧 FUNCIÓN PARA ENVIAR EMAIL
+async function enviarEmailConfirmacion(userId: string, courseId: string, session: Stripe.Checkout.Session) {
   try {
-    // 1. Guardar el pago
-    await prisma.payment.create({
-      data: {
-        userId,
-        stripeSessionId: session.id,
-        stripePaymentId: session.payment_intent as string,
-        amount: session.amount_total!,
-        currency: session.currency!,
-        status: 'PAID',
-      },
-    });
-
-    // 2. Crear inscripción
-    await prisma.enrollment.create({
-      data: {
-        userId,
-        courseId,
-      },
-    });
-
-    // 3. 🟢 ACTIVAR ESTUDIANTE (Cambiar status de INACTIVE a ACTIVE)
-    await prisma.user.update({
+    // Obtener datos del usuario y curso
+    const user = await prisma.user.findUnique({
       where: { id: userId },
-      data: { 
-        status: 'ACTIVE'  // ← ESTO ACTIVA AL ESTUDIANTE
-      },
+      include: { profile: true }
     });
 
-    // 4. Incrementar contador de alumnos inscritos
-    await prisma.course.update({
-      where: { id: courseId },
-      data: {
-        alumnosInscritos: { increment: 1 },
-      },
+    const course = await prisma.course.findUnique({
+      where: { id: courseId }
     });
 
-    console.log(`✅ Estudiante ${userId} activado y inscrito en curso ${courseId}`);
+    if (!user || !course || !user.profile) return;
 
-    // TODO: Enviar email de confirmación
-    // await enviarEmailConfirmacion(userId, courseId, session);
+    // Enviar email con Resend
+    await resend.emails.send({
+      from: 'Français Intelligent <inscripciones@tudominio.com>',
+      to: [user.email],
+      subject: '🎉 ¡Pago exitoso! Confirmación de inscripción',
+      html: `
+        <h1>¡Hola ${user.profile.nombre}!</h1>
+        <p>Tu pago ha sido procesado exitosamente.</p>
+        <h3>Detalles del curso:</h3>
+        <ul>
+          <li><strong>Curso:</strong> ${course.nivel} ${course.subnivel || ''}</li>
+          <li><strong>Horario:</strong> ${course.dias} - ${course.horario}</li>
+          <li><strong>Folio:</strong> ${user.folio}</li>
+        </ul>
+        <p>Tu acceso a la plataforma ya está activo.</p>
+      `
+    });
 
+    console.log(`✅ Email enviado a ${user.email}`);
   } catch (error) {
-    console.error('❌ Error procesando checkout completado:', error);
-    throw error;
+    console.error('❌ Error enviando email:', error);
   }
 }
