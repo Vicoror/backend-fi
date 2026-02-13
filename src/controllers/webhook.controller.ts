@@ -89,39 +89,81 @@ export async function stripeWebhook(req: Request, res: Response) {
 }
 
 // 📧 FUNCIÓN PARA ENVIAR EMAIL
-async function enviarEmailConfirmacion(userId: string, courseId: string, session: Stripe.Checkout.Session) {
+async function enviarEmailConfirmacion(user: any, course: any, session: Stripe.Checkout.Session) {
+  console.log('📧 Enviando email de confirmación...');
+
+  if (!user?.email) {
+    console.error('❌ Usuario sin email');
+    return;
+  }
+
   try {
-    // Obtener datos del usuario y curso
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { profile: true }
-    });
-
-    const course = await prisma.course.findUnique({
-      where: { id: courseId }
-    });
-
-    if (!user || !course || !user.profile) return;
-
-    // Enviar email con Resend
-    await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: 'Français Intelligent <onboarding@resend.dev>',
       to: [user.email],
       subject: '🎉 ¡Pago exitoso! Confirmación de inscripción',
       html: `
-        <h1>¡Hola ${user.profile.nombre}!</h1>
-        <p>Tu pago ha sido procesado exitosamente.</p>
-        <h3>Detalles del curso:</h3>
-        <ul>
-          <li><strong>Curso:</strong> ${course.nivel} ${course.subnivel || ''}</li>
-          <li><strong>Horario:</strong> ${course.dias} - ${course.horario}</li>
-          <li><strong>Folio:</strong> ${user.folio}</li>
-        </ul>
-        <p>Tu acceso a la plataforma ya está activo.</p>
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: #150354; color: white; padding: 20px; text-align: center; }
+            .content { background: #f8f9fa; padding: 30px; }
+            .credentials { background: #A8DADC; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .button { background: #150354; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🎓 Français Intelligent</h1>
+            </div>
+            <div class="content">
+              <h2>¡Hola ${user.profile?.nombre || 'estudiante'}!</h2>
+              
+              <p><strong>✅ Tu pago ha sido procesado exitosamente.</strong></p>
+              
+              <div class="credentials">
+                <h3 style="margin-top: 0;">🔐 Tus datos de acceso:</h3>
+                <p><strong>Folio:</strong> ${user.folio}</p>
+                <p><strong>Contraseña:</strong> La contraseña que estableciste en tu registro</p>
+                <p style="font-size: 0.9em; color: #666;">
+                  ¿No recuerdas tu contraseña? Puedes recuperarla en la página de login.
+                </p>
+              </div>
+
+              <h3>📚 Detalles del curso:</h3>
+              <ul>
+                <li><strong>Curso:</strong> ${course.nivel} ${course.subnivel || ''}</li>
+                <li><strong>Horario:</strong> ${course.dias} • ${course.horario}</li>
+                <li><strong>Inicio:</strong> ${new Date(course.inicio).toLocaleDateString('es-MX')}</li>
+                <li><strong>Fin:</strong> ${new Date(course.fin).toLocaleDateString('es-MX')}</li>
+              </ul>
+
+              <div style="text-align: center; margin-top: 30px;">
+                <a href="${process.env.FRONTEND_URL}/login" class="button">
+                  Iniciar sesión
+                </a>
+              </div>
+
+              <p style="margin-top: 30px;">
+                ¿Tienes dudas? Contáctanos por el chat de la plataforma.<br>
+                <strong>¡Nos vemos en clase!</strong>
+              </p>
+            </div>
+          </div>
+        </body>
+        </html>
       `
     });
 
-    console.log(`✅ Email enviado a ${user.email}`);
+    if (error) {
+      console.error('❌ Error de Resend:', error);
+    } else {
+      console.log('✅ Email enviado:', data?.id);
+    }
   } catch (error) {
     console.error('❌ Error enviando email:', error);
   }
