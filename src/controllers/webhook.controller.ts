@@ -74,8 +74,19 @@ export async function stripeWebhook(req: Request, res: Response) {
       });
       console.log(`✅ Usuario ${user.folio} activado`);
 
-      // 5. 📧 ENVIAR EMAIL DE CONFIRMACIÓN
-      await enviarEmailConfirmacion(userId, courseId, session);
+   // Obtener usuario con profile
+      const userWithProfile = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { profile: true }
+      });
+
+      // Obtener curso
+      const courseData = await prisma.course.findUnique({
+        where: { id: courseId }
+      });
+
+      await enviarEmailConfirmacion(userWithProfile, courseData, session);
+
 
       console.log('🎉 Proceso completado exitosamente');
 

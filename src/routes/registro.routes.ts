@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import bcrypt from 'bcryptjs';
-import { resend } from '../lib/resend'; // ← AGREGAR ESTE IMPORT
+import { resend } from '../lib/resend'; 
 
 const router = Router();
 
