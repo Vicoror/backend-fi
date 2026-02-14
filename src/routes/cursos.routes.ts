@@ -47,20 +47,26 @@ router.get('/admin', async (_req, res) => {
   }
 })
 
-// CREAR (CORREGIDO - maneja error de código duplicado)
+// CREAR (CORREGIDO - código respeta eliminaciones)
 router.post('/', async (req, res) => {
   try {
     const body = req.body as CursoInput
 
-    // Contar cursos existentes del mismo nivel
-    const count = await prisma.course.count({
+    // 🔥 NUEVA LÓGICA - Buscar el último código usado de ese nivel
+    const ultimoCurso = await prisma.course.findFirst({
       where: { nivel: body.nivel },
+      orderBy: { createdAt: 'desc' }
     })
 
-    // Generar código secuencial (ej: A1-001)
-    const code = `${body.nivel}-${String(count + 1).padStart(3, '0')}`
+    let nuevoNumero = 1
+    if (ultimoCurso?.code) {
+      const match = ultimoCurso.code.match(/-(\d+)/)
+      nuevoNumero = match ? parseInt(match[1]) + 1 : 1
+    }
 
-    // Intentar crear el curso
+    const code = `${body.nivel}-${String(nuevoNumero).padStart(3, '0')}`
+
+    // Crear el curso
     const curso = await prisma.course.create({
       data: {
         code,
@@ -81,7 +87,6 @@ router.post('/', async (req, res) => {
   } catch (error: any) {
     console.error('Error en POST /cursos:', error)
     
-    // 🔴 MANEJO ESPECÍFICO PARA CÓDIGO DUPLICADO
     if (error.code === 'P2002' && error.meta?.target?.includes('code')) {
       return res.status(400).json({
         error: 'Error al crear el curso',
