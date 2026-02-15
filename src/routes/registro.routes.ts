@@ -130,17 +130,10 @@ router.post('/', async (req, res) => {
             html: `<p>Hola ${nombre}, tu cuenta fue creada exitosamente.</p>`
           });
         }
-      } catch {}
+      } catch (error) {
+          console.error('Error enviando email:', error)
+        }
     }
-
-    await prisma.enrollment.create({
-      data: { userId, courseId: curso.id }
-    });
-
-    await prisma.course.update({
-      where: { id: curso.id },
-      data: { alumnosInscritos: { increment: 1 } }
-    });
 
     res.status(201).json({
       success: true,

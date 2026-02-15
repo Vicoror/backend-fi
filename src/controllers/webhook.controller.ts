@@ -47,25 +47,53 @@ export async function stripeWebhook(req: Request, res: Response) {
       console.log('✅ Payment creado:', payment.id);
 
       // 2. 🟢 CREAR PURCHASE (compra del curso)
-      const purchase = await prisma.purchase.create({
-        data: {
-          userId,
-          courseId,
-          paymentType: session.payment_method_types.includes('oxxo') ? 'OXXO' : 'CARD',
-          refunded: false,
-          stripeSessionId: session.id,
-        },
-      });
+      // Obtener payment intent real
+        const paymentIntent = await stripe.paymentIntents.retrieve(
+          session.payment_intent as string
+        )
+
+        const paymentMethodType = paymentIntent.payment_method_types[0]
+
+        const purchase = await prisma.purchase.create({
+          data: {
+            userId,
+            courseId,
+            paymentType: paymentMethodType === 'oxxo' ? 'OXXO' : 'CARD',
+            refunded: false,
+            stripeSessionId: session.id,
+          },
+        });
+
       console.log('✅ Purchase creado:', purchase.id);
 
       // 3. 📈 INCREMENTAR alumnosInscritos (SOLO AQUÍ)
-      const course = await prisma.course.update({
-        where: { id: courseId },
-        data: {
-          alumnosInscritos: { increment: 1 },
-        },
-      });
-      console.log(`✅ Curso actualizado: ahora ${course.alumnosInscritos} inscritos`);
+          const existingEnrollment = await prisma.enrollment.findUnique({
+            where: {
+              userId_courseId: {
+                userId,
+                courseId
+              }
+            }
+          });
+
+          if (!existingEnrollment) {
+            await prisma.enrollment.create({
+              data: {
+                userId,
+                courseId
+              }
+            });
+
+          await prisma.course.update({
+            where: { id: courseId },
+            data: {
+              alumnosInscritos: { increment: 1 }
+            }
+          });
+          
+        }
+
+      
 
       // 4. 🟢 ACTIVAR ESTUDIANTE (cambiar status a ACTIVE)
       const user = await prisma.user.update({

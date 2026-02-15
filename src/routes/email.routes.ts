@@ -8,7 +8,7 @@ router.post('/enviar-email', async (req, res) => {
     const { to, nombre, folio, curso, horario, dias, precio } = req.body;
 
     const { data, error } = await resend.emails.send({
-      from: 'Français Intelligent <inscripciones@tudominio.com>',
+      from: 'Français Intelligent <onboarding@resend.com>',
       to: [to],
       subject: '🎓 Confirmación de inscripción - Français Intelligent',
       html: `
