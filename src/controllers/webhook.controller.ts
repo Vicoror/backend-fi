@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { prisma } from '../lib/prisma';
 import { stripe } from '../lib/stripe';
-import { resend } from '../lib/resend';
+import { transporter } from '../lib/nodemailer'; // ✅ CAMBIADO A NODEMAILER
 
 export async function stripeWebhook(req: Request, res: Response) {
   const sig = req.headers['stripe-signature'] as string;
@@ -19,7 +19,6 @@ export async function stripeWebhook(req: Request, res: Response) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // ✅ SOLO EVENTO DE PAGO EXITOSO
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
     
@@ -33,7 +32,6 @@ export async function stripeWebhook(req: Request, res: Response) {
     }
 
     try {
-      // 1. 🔵 CREAR PAYMENT (registro del pago)
       const payment = await prisma.payment.create({
         data: {
           userId,
@@ -46,75 +44,65 @@ export async function stripeWebhook(req: Request, res: Response) {
       });
       console.log('✅ Payment creado:', payment.id);
 
-      // 2. 🟢 CREAR PURCHASE (compra del curso)
-      // Obtener payment intent real
-        const paymentIntent = await stripe.paymentIntents.retrieve(
-          session.payment_intent as string
-        )
+      const paymentIntent = await stripe.paymentIntents.retrieve(
+        session.payment_intent as string
+      );
 
-        const paymentMethodType = paymentIntent.payment_method_types[0]
+      const paymentMethodType = paymentIntent.payment_method_types[0];
 
-        const purchase = await prisma.purchase.create({
-          data: {
-            userId,
-            courseId,
-            paymentType: paymentMethodType === 'oxxo' ? 'OXXO' : 'CARD',
-            refunded: false,
-            stripeSessionId: session.id,
-          },
-        });
+      const purchase = await prisma.purchase.create({
+        data: {
+          userId,
+          courseId,
+          paymentType: paymentMethodType === 'oxxo' ? 'OXXO' : 'CARD',
+          refunded: false,
+          stripeSessionId: session.id,
+        },
+      });
 
       console.log('✅ Purchase creado:', purchase.id);
 
-      // 3. 📈 INCREMENTAR alumnosInscritos (SOLO AQUÍ)
-          const existingEnrollment = await prisma.enrollment.findUnique({
-            where: {
-              userId_courseId: {
-                userId,
-                courseId
-              }
-            }
-          });
-
-          if (!existingEnrollment) {
-            await prisma.enrollment.create({
-              data: {
-                userId,
-                courseId
-              }
-            });
-
-          await prisma.course.update({
-            where: { id: courseId },
-            data: {
-              alumnosInscritos: { increment: 1 }
-            }
-          });
-          
+      const existingEnrollment = await prisma.enrollment.findUnique({
+        where: {
+          userId_courseId: {
+            userId,
+            courseId
+          }
         }
+      });
 
-      
+      if (!existingEnrollment) {
+        await prisma.enrollment.create({
+          data: {
+            userId,
+            courseId
+          }
+        });
 
-      // 4. 🟢 ACTIVAR ESTUDIANTE (cambiar status a ACTIVE)
+        await prisma.course.update({
+          where: { id: courseId },
+          data: {
+            alumnosInscritos: { increment: 1 }
+          }
+        });
+      }
+
       const user = await prisma.user.update({
         where: { id: userId },
         data: { status: 'ACTIVE' },
       });
       console.log(`✅ Usuario ${user.folio} activado`);
 
-   // Obtener usuario con profile
       const userWithProfile = await prisma.user.findUnique({
         where: { id: userId },
         include: { profile: true }
       });
 
-      // Obtener curso
       const courseData = await prisma.course.findUnique({
         where: { id: courseId }
       });
 
       await enviarEmailConfirmacion(userWithProfile, courseData, session);
-
 
       console.log('🎉 Proceso completado exitosamente');
 
@@ -127,7 +115,7 @@ export async function stripeWebhook(req: Request, res: Response) {
   res.json({ received: true });
 }
 
-// 📧 FUNCIÓN PARA ENVIAR EMAIL
+// 📧 FUNCIÓN PARA ENVIAR EMAIL CON NODEMAILER
 async function enviarEmailConfirmacion(user: any, course: any, session: Stripe.Checkout.Session) {
   console.log('📧 Enviando email de confirmación...');
 
@@ -137,9 +125,9 @@ async function enviarEmailConfirmacion(user: any, course: any, session: Stripe.C
   }
 
   try {
-    const { data, error } = await resend.emails.send({
-      from: 'Français Intelligent <onboarding@resend.dev>',
-      to: [user.email],
+    const info = await transporter.sendMail({
+      from: `"Français Intelligent" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+      to: user.email,
       subject: '🎉 ¡Pago exitoso! Confirmación de inscripción',
       html: `
         <!DOCTYPE html>
@@ -151,7 +139,7 @@ async function enviarEmailConfirmacion(user: any, course: any, session: Stripe.C
             .header { background: #150354; color: white; padding: 20px; text-align: center; }
             .content { background: #f8f9fa; padding: 30px; }
             .credentials { background: #A8DADC; padding: 20px; border-radius: 8px; margin: 20px 0; }
-            .button { background: #150354; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; }
+            .button { background: #150354; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; }
           </style>
         </head>
         <body>
@@ -198,11 +186,7 @@ async function enviarEmailConfirmacion(user: any, course: any, session: Stripe.C
       `
     });
 
-    if (error) {
-      console.error('❌ Error de Resend:', error);
-    } else {
-      console.log('✅ Email enviado:', data?.id);
-    }
+    console.log('✅ Email enviado:', info.messageId);
   } catch (error) {
     console.error('❌ Error enviando email:', error);
   }

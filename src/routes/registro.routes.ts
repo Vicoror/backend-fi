@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
 import bcrypt from 'bcryptjs';
-import { resend } from '../lib/resend'; 
+import { transporter } from '../lib/nodemailer'; // ✅ CAMBIADO A NODEMAILER
 
 const router = Router();
 
@@ -32,7 +32,7 @@ router.post('/', async (req, res) => {
       apellidoMaterno, 
       telefono, 
       cursoId,
-      password // ✅ NUEVO
+      password
     } = req.body;
 
     // Validaciones básicas
@@ -43,7 +43,7 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Validación password backend (SEGURIDAD)
+    // Validación password backend
     if (
       password.length < 8 ||
       !/[A-Z]/.test(password) ||
@@ -53,7 +53,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'La contraseña no cumple requisitos de seguridad'
-      })
+      });
     }
 
     const curso = await prisma.course.findUnique({
@@ -94,7 +94,7 @@ router.post('/', async (req, res) => {
 
     } else {
       folio = await generarFolio();
-      const hashedPassword = await bcrypt.hash(password, 10); // ✅ HASH USER PASSWORD
+      const hashedPassword = await bcrypt.hash(password, 10);
 
       const nuevoUsuario = await prisma.user.create({
         data: {
@@ -120,19 +120,22 @@ router.post('/', async (req, res) => {
 
       esNuevoUsuario = true;
 
-      // EMAIL SIN CONTRASEÑA
+      // ✅ EMAIL CON NODEMAILER
       try {
-        if (process.env.RESEND_API_KEY) {
-          await resend.emails.send({
-            from: 'Français Intelligent <onboarding@resend.dev>',
-            to: [email],
+        if (process.env.SMTP_HOST) {
+          await transporter.sendMail({
+            from: `"Français Intelligent" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+            to: email,
             subject: '🎓 Bienvenido a Français Intelligent',
-            html: `<p>Hola ${nombre}, tu cuenta fue creada exitosamente.</p>`
+            html: `<p>Hola ${nombre}, tu cuenta fue creada exitosamente.</p>
+                   <p>Tu folio es: <strong>${folio}</strong></p>
+                   <p>Ya puedes completar tu inscripción.</p>`
           });
+          console.log('✅ Email de bienvenida enviado');
         }
       } catch (error) {
-          console.error('Error enviando email:', error)
-        }
+        console.error('❌ Error enviando email:', error);
+      }
     }
 
     res.status(201).json({
@@ -149,9 +152,9 @@ router.post('/', async (req, res) => {
     });
 
   } catch (error) {
+    console.error('❌ Error en registro:', error);
     res.status(500).json({ success: false, message: 'Error al procesar el registro' });
   }
 });
-
 
 export default router;
