@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { prisma } from '../lib/prisma';
+import { prisma} from '../lib/prisma';
 import bcrypt from 'bcryptjs';
-import { transporter } from '../lib/nodemailer'; // ✅ CAMBIADO A NODEMAILER
+import { transporter } from '../lib/nodemailer';
 
 const router = Router();
 
@@ -31,12 +31,13 @@ router.post('/', async (req, res) => {
       apellidoPaterno, 
       apellidoMaterno, 
       telefono, 
+      estado, 
       cursoId,
       password
     } = req.body;
 
     // Validaciones básicas
-    if (!email || !nombre || !apellidoPaterno || !telefono || !cursoId || !password) {
+    if (!email || !nombre || !apellidoPaterno || !telefono || !estado|| !cursoId || !password) {
       return res.status(400).json({ 
         success: false, 
         message: 'Todos los campos obligatorios deben completarse' 
@@ -76,23 +77,30 @@ router.post('/', async (req, res) => {
     let userId: string;
     let folio: string;
     let esNuevoUsuario: boolean;
+    let mensaje: string;
 
     if (usuarioExistente) {
+      // ✅ CORREO YA REGISTRADO - Solo actualizamos datos del perfil, NO la contraseña
       await prisma.profile.update({
         where: { userId: usuarioExistente.id },
         data: {
           nombre,
           apellidoPaterno,
           apellidoMaterno: apellidoMaterno || null,
-          telefono
+          telefono,
+          estado,   
         }
       });
 
       userId = usuarioExistente.id;
       folio = usuarioExistente.folio;
       esNuevoUsuario = false;
+      mensaje = 'El correo ya está registrado. Se actualizaron tus datos y puedes proceder al pago.';
+
+      console.log(`📧 Correo existente: ${email} - Actualizando perfil para compra`);
 
     } else {
+      // ✅ NUEVO USUARIO - Creamos todo
       folio = await generarFolio();
       const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -114,32 +122,42 @@ router.post('/', async (req, res) => {
           nombre,
           apellidoPaterno,
           apellidoMaterno: apellidoMaterno || null,
-          telefono
+          telefono,
+          estado,   
         }
       });
 
       esNuevoUsuario = true;
+      mensaje = 'Registro exitoso. Ahora puedes proceder al pago.';
 
-      // ✅ EMAIL CON NODEMAILER
+      // Email de bienvenida SOLO para nuevos usuarios
       try {
         if (process.env.SMTP_HOST) {
           await transporter.sendMail({
             from: `"Français Intelligent" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
             to: email,
-            subject: '🎓 Bienvenido a Français Intelligent',
-            html: `<p>Hola ${nombre}, tu cuenta fue creada exitosamente.</p>
-                   <p>Tu folio es: <strong>${folio}</strong></p>
-                   <p>Ya puedes completar tu inscripción.</p>`
+            subject: '🎓 Bienvenid@ a Français Intelligent',
+            html: `<p>Bonjour ${nombre}, tu cuenta fue creada exitosamente.</p>
+                   <p>Ya puedes completar tu inscripción realizando el pago.</p>`
           });
-          console.log('✅ Email de bienvenida enviado');
+          console.log('✅ Email de bienvenida enviado a nuevo usuario');
         }
       } catch (error) {
         console.error('❌ Error enviando email:', error);
       }
     }
 
+    // ✅ IMPORTANTE: Verificar si el usuario ya tiene una compra para este curso
+    const compraExistente = await prisma.purchase.findFirst({
+      where: {
+        userId,
+        courseId: curso.id
+      }
+    });
+
     res.status(201).json({
       success: true,
+      message: mensaje,
       data: {
         userId,
         folio,
@@ -147,13 +165,20 @@ router.post('/', async (req, res) => {
         cursoId: curso.id,
         cursoNombre: `${curso.nivel} ${curso.subnivel || ''}`.trim(),
         precio: curso.precio,
-        esNuevoUsuario
+        esNuevoUsuario,
+        yaInscrito: !!compraExistente, // Indica si ya compró este curso antes
+        mensajeAdicional: usuarioExistente 
+          ? 'ℹ️ Usa tu contraseña existente para iniciar sesión. La contraseña no se modificó.'
+          : null
       }
     });
 
   } catch (error) {
     console.error('❌ Error en registro:', error);
-    res.status(500).json({ success: false, message: 'Error al procesar el registro' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error al procesar el registro'
+    });
   }
 });
 

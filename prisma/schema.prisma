@@ -39,6 +39,40 @@ model User {
 
   createdAt DateTime @default(now())
 }
+enum Estado {
+  AGUASCALIENTES
+  BAJA_CALIFORNIA
+  BAJA_CALIFORNIA_SUR
+  CAMPECHE
+  CHIAPAS
+  CHIHUAHUA
+  CIUDAD_DE_MEXICO
+  COAHUILA
+  COLIMA
+  DURANGO
+  ESTADO_DE_MEXICO
+  GUANAJUATO
+  GUERRERO
+  HIDALGO
+  JALISCO
+  MICHOACAN
+  MORELOS
+  NAYARIT
+  NUEVO_LEON
+  OAXACA
+  PUEBLA
+  QUERETARO
+  QUINTANA_ROO
+  SAN_LUIS_POTOSI
+  SINALOA
+  SONORA
+  TABASCO
+  TAMAULIPAS
+  TLAXCALA
+  VERACRUZ
+  YUCATAN
+  ZACATECAS
+}
 
 model Profile {
   id     String @id @default(uuid())
@@ -49,6 +83,7 @@ model Profile {
   apellidoPaterno String
   apellidoMaterno String?
   telefono        String?
+  estado          Estado?
 }
 
 model Course {
