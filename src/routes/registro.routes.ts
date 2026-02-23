@@ -5,7 +5,6 @@ import { transporter } from '../lib/nodemailer';
 
 const router = Router();
 
-// Generar folio único para estudiante
 async function generarFolio(): Promise<string> {
   const ultimo = await prisma.user.findFirst({
     where: { role: 'STUDENT' },
@@ -22,7 +21,6 @@ async function generarFolio(): Promise<string> {
   return `EST${String(numero).padStart(3, '0')}`;
 }
 
-// POST /registro
 router.post('/', async (req, res) => {
   try {
     const { 
@@ -37,23 +35,10 @@ router.post('/', async (req, res) => {
     } = req.body;
 
     // Validaciones básicas
-    if (!email || !nombre || !apellidoPaterno || !telefono || !estado|| !cursoId || !password) {
+    if (!email || !nombre || !apellidoPaterno || !telefono || !estado || !cursoId) {
       return res.status(400).json({ 
         success: false, 
         message: 'Todos los campos obligatorios deben completarse' 
-      });
-    }
-
-    // Validación password backend
-    if (
-      password.length < 8 ||
-      !/[A-Z]/.test(password) ||
-      !/\d/.test(password) ||
-      !/[^A-Za-z0-9]/.test(password)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: 'La contraseña no cumple requisitos de seguridad'
       });
     }
 
@@ -80,7 +65,8 @@ router.post('/', async (req, res) => {
     let mensaje: string;
 
     if (usuarioExistente) {
-      // ✅ CORREO YA REGISTRADO - Solo actualizamos datos del perfil, NO la contraseña
+      // ✅ CASO 1: CORREO EXISTENTE - NO VALIDAR PASSWORD
+      // Solo actualizamos datos del perfil, NUNCA la contraseña
       await prisma.profile.update({
         where: { userId: usuarioExistente.id },
         data: {
@@ -95,12 +81,52 @@ router.post('/', async (req, res) => {
       userId = usuarioExistente.id;
       folio = usuarioExistente.folio;
       esNuevoUsuario = false;
-      mensaje = 'El correo ya está registrado. Se actualizaron tus datos y puedes proceder al pago.';
+      mensaje = 'CORREO_EXISTENTE';
 
-      console.log(`📧 Correo existente: ${email} - Actualizando perfil para compra`);
+      console.log(`📧 Usuario existente: ${email} - Actualizando perfil`);
+
+      // Responder sin validar password
+      return res.status(200).json({
+        success: true,
+        message: mensaje,
+        data: {
+          userId,
+          folio,
+          email: usuarioExistente.email,
+          nombre: usuarioExistente.profile?.nombre || nombre,
+          apellidoPaterno: usuarioExistente.profile?.apellidoPaterno || apellidoPaterno,
+          apellidoMaterno: usuarioExistente.profile?.apellidoMaterno || apellidoMaterno,
+          telefono: usuarioExistente.profile?.telefono || telefono,
+          estado: usuarioExistente.profile?.estado || estado,
+          cursoId: curso.id,
+          cursoNombre: `${curso.nivel} ${curso.subnivel || ''}`.trim(),
+          precio: curso.precio,
+          esNuevoUsuario: false
+        }
+      });
 
     } else {
-      // ✅ NUEVO USUARIO - Creamos todo
+      // ✅ CASO 2: NUEVO USUARIO - Validar password
+      if (!password) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'La contraseña es obligatoria para nuevos usuarios' 
+        });
+      }
+
+      // Validación password solo para nuevos usuarios
+      if (
+        password.length < 8 ||
+        !/[A-Z]/.test(password) ||
+        !/\d/.test(password) ||
+        !/[^A-Za-z0-9]/.test(password)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'La contraseña no cumple requisitos de seguridad'
+        });
+      }
+
       folio = await generarFolio();
       const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -128,9 +154,9 @@ router.post('/', async (req, res) => {
       });
 
       esNuevoUsuario = true;
-      mensaje = 'Registro exitoso. Ahora puedes proceder al pago.';
+      mensaje = 'NUEVO_USUARIO';
 
-      // Email de bienvenida SOLO para nuevos usuarios
+      // Email de bienvenida solo para nuevos usuarios
       try {
         if (process.env.SMTP_HOST) {
           await transporter.sendMail({
@@ -140,38 +166,30 @@ router.post('/', async (req, res) => {
             html: `<p>Bonjour ${nombre}, tu cuenta fue creada exitosamente.</p>
                    <p>Ya puedes completar tu inscripción realizando el pago.</p>`
           });
-          console.log('✅ Email de bienvenida enviado a nuevo usuario');
         }
       } catch (error) {
         console.error('❌ Error enviando email:', error);
       }
+
+      res.status(201).json({
+        success: true,
+        message: mensaje,
+        data: {
+          userId,
+          folio,
+          email,
+          nombre,
+          apellidoPaterno,
+          apellidoMaterno,
+          telefono,
+          estado,
+          cursoId: curso.id,
+          cursoNombre: `${curso.nivel} ${curso.subnivel || ''}`.trim(),
+          precio: curso.precio,
+          esNuevoUsuario: true
+        }
+      });
     }
-
-    // ✅ IMPORTANTE: Verificar si el usuario ya tiene una compra para este curso
-    const compraExistente = await prisma.purchase.findFirst({
-      where: {
-        userId,
-        courseId: curso.id
-      }
-    });
-
-    res.status(201).json({
-      success: true,
-      message: mensaje,
-      data: {
-        userId,
-        folio,
-        email,
-        cursoId: curso.id,
-        cursoNombre: `${curso.nivel} ${curso.subnivel || ''}`.trim(),
-        precio: curso.precio,
-        esNuevoUsuario,
-        yaInscrito: !!compraExistente, // Indica si ya compró este curso antes
-        mensajeAdicional: usuarioExistente 
-          ? 'ℹ️ Usa tu contraseña existente para iniciar sesión. La contraseña no se modificó.'
-          : null
-      }
-    });
 
   } catch (error) {
     console.error('❌ Error en registro:', error);

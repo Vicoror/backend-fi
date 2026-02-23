@@ -5,8 +5,8 @@ import authRoutes from './routes/auth.routes';
 import checkoutRoutes from './routes/checkout';
 import cursosRoutes from './routes/cursos.routes';
 import registroRoutes from './routes/registro.routes';
-import emailRoutes from './routes/email.routes';
 import webhookRoutes from './routes/webhook.routes';
+import verificarEmailRoutes from './routes/verificar-email.routes';
 
 const app = express();
 
@@ -74,6 +74,6 @@ app.use('/auth', authRoutes);
 app.use('/checkout', checkoutRoutes);
 app.use('/cursos', cursosRoutes);
 app.use('/registro', registroRoutes);
-app.use('/api', emailRoutes);
+app.use('/usuarios', verificarEmailRoutes);
 
 export default app;
