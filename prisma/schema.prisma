@@ -157,3 +157,18 @@ model Payment {
 
   user User @relation(fields: [userId], references: [id])
 }
+
+// Agregar este modelo a tu schema.prisma
+model PasswordReset {
+  id        String   @id @default(uuid())
+  email     String
+  codigo    String   // Código de 6 dígitos
+  expiraEn  DateTime
+  usado     Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([email, codigo])
+  @@index([email])
+  @@index([expiraEn])
+}
