@@ -172,3 +172,17 @@ model PasswordReset {
   @@index([email])
   @@index([expiraEn])
 }
+
+// Agregar este modelo a tu schema.prisma
+model Aspirante {
+  id        String   @id @default(uuid())
+  email     String   @db.VarChar(50)
+  horario1  String   // Horario preferente 1
+  horario2  String   // Horario preferente 2  
+  nivel     String   // Nivel de interés
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([nivel])
+}
