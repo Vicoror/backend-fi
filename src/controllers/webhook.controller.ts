@@ -26,11 +26,11 @@ export async function stripeWebhook(req: Request, res: Response) {
     
     // Verificar si es un método de pago inmediato (tarjeta)
     if (session.payment_method_types.includes('card')) {
-      await procesarPagoExitoso(session, 'CARD');
+      await procesarPagoExitoso(session, PaymentType.CARD);
     } else {
       console.log(`⏳ Pago asíncrono iniciado (${session.payment_method_types[0]}), esperando confirmación...`);
       // Para OXXO, solo guardamos referencia pero NO activamos usuario
-      await guardarReferenciaPago(session, 'OXXO');
+      await guardarReferenciaPago(session, PaymentType.OXXO);
     }
   }
 
@@ -38,7 +38,7 @@ export async function stripeWebhook(req: Request, res: Response) {
   if (event.type === 'checkout.session.async_payment_succeeded') {
     const session = event.data.object as Stripe.Checkout.Session;
     console.log('💰 Pago OXXO confirmado:', session.id);
-    await procesarPagoExitoso(session, 'OXXO');
+    await procesarPagoExitoso(session, PaymentType.OXXO);
   }
 
   // ✅ CASO 3: Pago asíncrono falló/expiro (opcional)
@@ -51,8 +51,9 @@ export async function stripeWebhook(req: Request, res: Response) {
   res.json({ received: true });
 }
 
+
 // Función para guardar referencia inicial de pago (para OXXO)
-async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: string) {
+async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: PaymentType) {
   const { userId, courseId } = session.metadata || {};
 
   if (!userId || !courseId) {
@@ -91,7 +92,7 @@ async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: str
         data: {
           userId,
           courseId,
-          paymentType: tipo === 'OXXO' ? PaymentType.OXXO : PaymentType.CARD,
+          paymentType: tipo,
           refunded: false,
           stripeSessionId: session.id,
           status: 'PENDING' // Agregar este campo a tu modelo Purchase
@@ -116,7 +117,7 @@ async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: str
 }
 
 // Función para procesar pago exitoso (tanto tarjeta como OXXO confirmado)
-async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipo: string) {
+async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipo: PaymentType) {
   const { userId, courseId } = session.metadata || {};
 
   if (!userId || !courseId) {
@@ -147,7 +148,7 @@ async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipo: strin
       create: {
         userId,
         courseId,
-        paymentType: tipo === 'OXXO' ? PaymentType.OXXO : PaymentType.CARD,
+        paymentType: tipo,
         refunded: false,
         stripeSessionId: session.id,
         status: 'COMPLETED'
