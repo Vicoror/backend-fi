@@ -75,7 +75,7 @@ async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: str
           stripePaymentId: session.payment_intent as string,
           amount: session.amount_total!,
           currency: session.currency!,
-          status: 'PENDING', // Pendiente hasta confirmación
+          status: 'PENDING',
         },
       });
       console.log('⏳ Payment pendiente creado:', payment.id);
@@ -94,7 +94,7 @@ async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: str
           paymentType: tipo === 'OXXO' ? PaymentType.OXXO : PaymentType.CARD,
           refunded: false,
           stripeSessionId: session.id,
-          status: 'PENDING' // Agregar este campo a tu modelo Purchase
+          status: 'PENDING'
         },
       });
       console.log('⏳ Purchase pendiente creado');
@@ -107,7 +107,71 @@ async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: str
     });
 
     if (user?.email) {
-      await enviarEmailInstruccionesOxxo(user, session);
+      // Usar el mismo patrón que funciona en registro.routes.ts
+      try {
+        if (process.env.SMTP_HOST) {
+          await transporter.sendMail({
+            from: `"Français Intelligent" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+            to: user.email,
+            subject: '🧾 Instrucciones para pago en OXXO',
+            html: `
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <style>
+                  body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                  .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                  .header { background: #150354; color: white; padding: 20px; text-align: center; }
+                  .content { background: #f8f9fa; padding: 30px; }
+                  .oxxo-info { background: #A8DADC; padding: 20px; border-radius: 8px; margin: 20px 0; }
+                  .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <div class="header">
+                    <h1>🎓 Français Intelligent</h1>
+                  </div>
+                  <div class="content">
+                    <h2>¡Hola ${user.profile?.nombre || 'estudiante'}!</h2>
+                    
+                    <p>Has generado un pago por OXXO para inscribirte al curso.</p>
+                    
+                    <div class="oxxo-info">
+                      <h3 style="margin-top: 0;">🧾 Instrucciones:</h3>
+                      <ol>
+                        <li>Guarda o imprime tu línea de captura</li>
+                        <li>Acude a cualquier OXXO</li>
+                        <li>Realiza el pago de <strong>$${session.amount_total! / 100} MXN</strong></li>
+                        <li>El pago se reflejará en 24-48 horas</li>
+                      </ol>
+                      <p style="font-size: 1.2em; text-align: center; margin: 20px 0;">
+                        <strong>Línea de captura:</strong><br>
+                        ${session.payment_intent}
+                      </p>
+                    </div>
+
+                    <div class="warning">
+                      <p><strong>⚠️ Importante:</strong></p>
+                      <ul>
+                        <li>Tu pago debe realizarse antes de 3 días</li>
+                        <li>Recibirás un correo de confirmación cuando el pago sea verificado</li>
+                        <li>Tu acceso a la plataforma se activará automáticamente al confirmarse el pago</li>
+                      </ul>
+                    </div>
+
+                    <p>¿Tienes dudas? Contáctanos por el chat de la plataforma.</p>
+                  </div>
+                </div>
+              </body>
+              </html>
+            `
+          });
+          console.log('✅ Email instrucciones OXXO enviado');
+        }
+      } catch (error) {
+        console.error('❌ Error enviando email instrucciones OXXO:', error);
+      }
     }
 
   } catch (error) {
@@ -198,7 +262,78 @@ async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipo: strin
       where: { id: courseId }
     });
 
-    await enviarEmailConfirmacion(userWithProfile, courseData, session, tipo);
+    // Usar el mismo patrón que funciona en registro.routes.ts
+    if (userWithProfile?.email) {
+      try {
+        if (process.env.SMTP_HOST) {
+          const esOxxo = tipo === 'OXXO';
+          
+          await transporter.sendMail({
+            from: `"Français Intelligent" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+            to: userWithProfile.email,
+            subject: esOxxo ? '✅ Pago OXXO confirmado - Inscripción exitosa' : '🎉 ¡Pago exitoso! Confirmación de inscripción',
+            html: `
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <style>
+                  body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                  .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                  .header { background: #150354; color: white; padding: 20px; text-align: center; }
+                  .content { background: #f8f9fa; padding: 30px; }
+                  .credentials { background: #A8DADC; padding: 20px; border-radius: 8px; margin: 20px 0; }
+                  .button { background: #150354; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <div class="header">
+                    <h1>🎓 Français Intelligent</h1>
+                  </div>
+                  <div class="content">
+                    <h2>¡Hola ${userWithProfile.profile?.nombre || 'estudiante'}!</h2>
+                    
+                    <p><strong>✅ ${esOxxo ? 'Tu pago en OXXO ha sido confirmado' : 'Tu pago ha sido procesado exitosamente'}.</strong></p>
+                    
+                    <div class="credentials">
+                      <h3 style="margin-top: 0;">🔐 Tus datos de acceso:</h3>
+                      <p><strong>Folio:</strong> ${userWithProfile.folio}</p>
+                      <p><strong>Contraseña:</strong> La contraseña que estableciste en tu registro</p>
+                      <p style="font-size: 0.9em; color: #666;">
+                        ¿No recuerdas tu contraseña? Puedes recuperarla en la página de login.
+                      </p>
+                    </div>
+
+                    <h3>📚 Detalles del curso:</h3>
+                    <ul>
+                      <li><strong>Curso:</strong> ${courseData?.nivel} ${courseData?.subnivel || ''}</li>
+                      <li><strong>Horario:</strong> ${courseData?.dias} • ${courseData?.horario}</li>
+                      <li><strong>Inicio:</strong> ${courseData?.inicio ? new Date(courseData.inicio).toLocaleDateString('es-MX') : ''}</li>
+                      <li><strong>Fin:</strong> ${courseData?.fin ? new Date(courseData.fin).toLocaleDateString('es-MX') : ''}</li>
+                    </ul>
+
+                    <div style="text-align: center; margin-top: 30px;">
+                      <a href="${process.env.FRONTEND_URL}/login" class="button">
+                        Iniciar sesión
+                      </a>
+                    </div>
+
+                    <p style="margin-top: 30px;">
+                      ¿Tienes dudas? Contáctanos por el chat de la plataforma.<br>
+                      <strong>¡Nos vemos en clase!</strong>
+                    </p>
+                  </div>
+                </div>
+              </body>
+              </html>
+            `
+          });
+          console.log('✅ Email de confirmación enviado');
+        }
+      } catch (error) {
+        console.error('❌ Error enviando email de confirmación:', error);
+      }
+    }
 
     console.log('🎉 Proceso completado exitosamente');
 
@@ -226,148 +361,5 @@ async function manejarPagoFallido(session: Stripe.Checkout.Session) {
     console.log('❌ Pago marcado como fallido');
   } catch (error) {
     console.error('Error manejando pago fallido:', error);
-  }
-}
-
-async function enviarEmailInstruccionesOxxo(user: any, session: Stripe.Checkout.Session) {
-  try {
-    await transporter.sendMail({
-      from: `"Français Intelligent" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
-      to: user.email,
-      subject: '🧾 Instrucciones para pago en OXXO',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: #150354; color: white; padding: 20px; text-align: center; }
-            .content { background: #f8f9fa; padding: 30px; }
-            .oxxo-info { background: #A8DADC; padding: 20px; border-radius: 8px; margin: 20px 0; }
-            .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>🎓 Français Intelligent</h1>
-            </div>
-            <div class="content">
-              <h2>¡Hola ${user.profile?.nombre || 'estudiante'}!</h2>
-              
-              <p>Has generado un pago por OXXO para inscribirte al curso.</p>
-              
-              <div class="oxxo-info">
-                <h3 style="margin-top: 0;">🧾 Instrucciones:</h3>
-                <ol>
-                  <li>Guarda o imprime tu línea de captura</li>
-                  <li>Acude a cualquier OXXO</li>
-                  <li>Realiza el pago de <strong>$${session.amount_total! / 100} MXN</strong></li>
-                  <li>El pago se reflejará en 24-48 horas</li>
-                </ol>
-                <p style="font-size: 1.2em; text-align: center; margin: 20px 0;">
-                  <strong>Línea de captura:</strong><br>
-                  ${session.payment_intent}
-                </p>
-              </div>
-
-              <div class="warning">
-                <p><strong>⚠️ Importante:</strong></p>
-                <ul>
-                  <li>Tu pago debe realizarse antes de 3 días</li>
-                  <li>Recibirás un correo de confirmación cuando el pago sea verificado</li>
-                  <li>Tu acceso a la plataforma se activará automáticamente al confirmarse el pago</li>
-                </ul>
-              </div>
-
-              <p>¿Tienes dudas? Contáctanos por el chat de la plataforma.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `
-    });
-    console.log('✅ Email instrucciones OXXO enviado');
-  } catch (error) {
-    console.error('❌ Error enviando email instrucciones OXXO:', error);
-  }
-}
-
-async function enviarEmailConfirmacion(user: any, course: any, session: Stripe.Checkout.Session, tipo: string) {
-  console.log('📧 Enviando email de confirmación...');
-
-  if (!user?.email) {
-    console.error('❌ Usuario sin email');
-    return;
-  }
-
-  const esOxxo = tipo === 'OXXO';
-
-  try {
-    const info = await transporter.sendMail({
-      from: `"Français Intelligent" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
-      to: user.email,
-      subject: esOxxo ? '✅ Pago OXXO confirmado - Inscripción exitosa' : '🎉 ¡Pago exitoso! Confirmación de inscripción',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: #150354; color: white; padding: 20px; text-align: center; }
-            .content { background: #f8f9fa; padding: 30px; }
-            .credentials { background: #A8DADC; padding: 20px; border-radius: 8px; margin: 20px 0; }
-            .button { background: #150354; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>🎓 Français Intelligent</h1>
-            </div>
-            <div class="content">
-              <h2>¡Hola ${user.profile?.nombre || 'estudiante'}!</h2>
-              
-              <p><strong>✅ ${esOxxo ? 'Tu pago en OXXO ha sido confirmado' : 'Tu pago ha sido procesado exitosamente'}.</strong></p>
-              
-              <div class="credentials">
-                <h3 style="margin-top: 0;">🔐 Tus datos de acceso:</h3>
-                <p><strong>Folio:</strong> ${user.folio}</p>
-                <p><strong>Contraseña:</strong> La contraseña que estableciste en tu registro</p>
-                <p style="font-size: 0.9em; color: #666;">
-                  ¿No recuerdas tu contraseña? Puedes recuperarla en la página de login.
-                </p>
-              </div>
-
-              <h3>📚 Detalles del curso:</h3>
-              <ul>
-                <li><strong>Curso:</strong> ${course.nivel} ${course.subnivel || ''}</li>
-                <li><strong>Horario:</strong> ${course.dias} • ${course.horario}</li>
-                <li><strong>Inicio:</strong> ${new Date(course.inicio).toLocaleDateString('es-MX')}</li>
-                <li><strong>Fin:</strong> ${new Date(course.fin).toLocaleDateString('es-MX')}</li>
-              </ul>
-
-              <div style="text-align: center; margin-top: 30px;">
-                <a href="${process.env.FRONTEND_URL}/login" class="button">
-                  Iniciar sesión
-                </a>
-              </div>
-
-              <p style="margin-top: 30px;">
-                ¿Tienes dudas? Contáctanos por el chat de la plataforma.<br>
-                <strong>¡Nos vemos en clase!</strong>
-              </p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `
-    });
-
-    console.log('✅ Email enviado:', info.messageId);
-  } catch (error) {
-    console.error('❌ Error enviando email:', error);
   }
 }
