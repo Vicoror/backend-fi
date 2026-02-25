@@ -54,7 +54,7 @@ export async function stripeWebhook(req: Request, res: Response) {
 
 // Función para procesar pago exitoso (tanto tarjeta como OXXO confirmado)
 async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipoPago: PaymentType) {
-  console.log('🎯 Procesando pago exitoso:', session.id);
+  console.log('🎯 Procesando pago exitoso:', session.id, 'Tipo:', tipoPago);
   
   const { userId, courseId } = session.metadata || {};
 
@@ -99,17 +99,17 @@ async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipoPago: P
 
     let purchase;
     if (existingPurchase) {
-      // Actualizar el existente
+      // Actualizar el existente - PRESERVAR el tipo de pago original
       purchase = await prisma.purchase.update({
         where: { id: existingPurchase.id },
         data: { 
-          status: 'COMPLETED',
-          paymentType: tipoPago
+          status: 'COMPLETED'
+          // NO actualizamos paymentType para preservar el original
         }
       });
-      console.log('💰 Purchase actualizado a COMPLETED:', purchase.id);
+      console.log('💰 Purchase actualizado a COMPLETED:', purchase.id, 'Tipo original:', existingPurchase.paymentType);
     } else {
-      // Crear nuevo
+      // Crear nuevo (solo debería pasar con tarjeta)
       purchase = await prisma.purchase.create({
         data: {
           userId,
@@ -120,7 +120,7 @@ async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipoPago: P
           status: 'COMPLETED',
         },
       });
-      console.log('💰 Purchase creado:', purchase.id);
+      console.log('💰 Purchase creado:', purchase.id, 'Tipo:', tipoPago);
     }
 
     // 3. Verificar si ya existe enrollment
@@ -169,9 +169,11 @@ async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipoPago: P
       where: { id: courseId }
     });
 
-    // 7. Enviar email de confirmación
+    // 7. Enviar email de confirmación con el tipo correcto
     if (userWithProfile?.email && courseData) {
-      await enviarEmailConfirmacion(userWithProfile, courseData, tipoPago);
+      // Usar el tipo del purchase existente o el que se pasó
+      const tipoParaEmail = existingPurchase ? existingPurchase.paymentType : tipoPago;
+      await enviarEmailConfirmacion(userWithProfile, courseData, tipoParaEmail);
     }
 
     console.log('🎉 Proceso completado exitosamente');
@@ -206,18 +208,18 @@ async function guardarReferenciaOxxo(session: Stripe.Checkout.Session) {
     });
     console.log('⏳ Payment pendiente creado');
 
-    // Crear purchase en PENDING
+    // Crear purchase en PENDING con tipo OXXO explícitamente
     await prisma.purchase.create({
       data: {
         userId,
         courseId,
-        paymentType: PaymentType.OXXO,
+        paymentType: PaymentType.OXXO, // FORZAMOS OXXO
         refunded: false,
         stripeSessionId: session.id,
         status: 'PENDING',
       },
     });
-    console.log('⏳ Purchase pendiente creado');
+    console.log('⏳ Purchase pendiente creado con tipo OXXO');
 
     // Enviar email de instrucciones
     const user = await prisma.user.findUnique({
@@ -257,7 +259,7 @@ async function manejarPagoFallido(session: Stripe.Checkout.Session) {
 
 // Email de confirmación (para tarjeta y OXXO confirmado)
 async function enviarEmailConfirmacion(user: any, course: any, tipoPago: PaymentType) {
-  console.log('📧 Enviando email de confirmación...');
+  console.log('📧 Enviando email de confirmación... Tipo:', tipoPago);
 
   if (!user?.email) {
     console.error('❌ Usuario sin email');
