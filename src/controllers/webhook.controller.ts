@@ -6,6 +6,8 @@ import { transporter } from '../lib/nodemailer';
 import { PaymentType } from '@prisma/client';
 
 export async function stripeWebhook(req: Request, res: Response) {
+  console.log('📨 Webhook recibido en Vercel. Verificando firma...');
+  
   const sig = req.headers['stripe-signature'] as string;
   let event: Stripe.Event;
 
@@ -15,6 +17,7 @@ export async function stripeWebhook(req: Request, res: Response) {
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     );
+    console.log(`✅ Firma verificada. Evento tipo: ${event.type}`);
   } catch (err) {
     console.error('❌ Error verificando webhook:', err);
     return res.status(400).send(`Webhook Error: ${err.message}`);
@@ -23,25 +26,27 @@ export async function stripeWebhook(req: Request, res: Response) {
   // ✅ CASO 1: Pago con tarjeta (inmediato)
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
+    console.log('🎯 checkout.session.completed recibido:', session.id);
     
     // Verificar si es un método de pago inmediato (tarjeta)
     if (session.payment_method_types.includes('card')) {
-      await procesarPagoExitoso(session, PaymentType.CARD);
+      console.log('💳 Pago con tarjeta detectado, procesando inmediatamente...');
+      await procesarPagoExitoso(session, 'CARD');
     } else {
       console.log(`⏳ Pago asíncrono iniciado (${session.payment_method_types[0]}), esperando confirmación...`);
-      // Para OXXO, solo guardamos referencia pero NO activamos usuario
-      await guardarReferenciaPago(session, PaymentType.OXXO);
+      await guardarReferenciaPago(session, 'OXXO');
     }
   }
 
   // ✅ CASO 2: Pago asíncrono confirmado (OXXO pagado)
   if (event.type === 'checkout.session.async_payment_succeeded') {
     const session = event.data.object as Stripe.Checkout.Session;
-    console.log('💰 Pago OXXO confirmado:', session.id);
-    await procesarPagoExitoso(session, PaymentType.OXXO);
+    console.log('💰 Pago OXXO confirmado recibido:', session.id);
+    console.log('📦 Metadata del evento OXXO:', session.metadata);
+    await procesarPagoExitoso(session, 'OXXO');
   }
 
-  // ✅ CASO 3: Pago asíncrono falló/expiro (opcional)
+  // ✅ CASO 3: Pago asíncrono falló/expiro
   if (event.type === 'checkout.session.async_payment_failed') {
     const session = event.data.object as Stripe.Checkout.Session;
     console.log('❌ Pago OXXO falló/expiro:', session.id);
@@ -51,13 +56,15 @@ export async function stripeWebhook(req: Request, res: Response) {
   res.json({ received: true });
 }
 
-
 // Función para guardar referencia inicial de pago (para OXXO)
-async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: PaymentType) {
+async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: string) {
+  console.log('📦 guardarReferenciaPago - Iniciando para sesión:', session.id);
+  
   const { userId, courseId } = session.metadata || {};
+  console.log('📦 Metadata extraída:', { userId, courseId });
 
   if (!userId || !courseId) {
-    console.error('❌ Metadata faltante');
+    console.error('❌ Metadata faltante en guardarReferenciaPago');
     return;
   }
 
@@ -68,7 +75,6 @@ async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: Pay
     });
 
     if (!existingPayment) {
-      // Crear payment en estado PENDING
       const payment = await prisma.payment.create({
         data: {
           userId,
@@ -76,10 +82,12 @@ async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: Pay
           stripePaymentId: session.payment_intent as string,
           amount: session.amount_total!,
           currency: session.currency!,
-          status: 'PENDING', // Pendiente hasta confirmación
+          status: 'PENDING',
         },
       });
       console.log('⏳ Payment pendiente creado:', payment.id);
+    } else {
+      console.log('⏳ Payment ya existente:', existingPayment.id);
     }
 
     // Crear purchase en estado pendiente
@@ -88,17 +96,19 @@ async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: Pay
     });
 
     if (!existingPurchase) {
-      await prisma.purchase.create({
+      const purchase = await prisma.purchase.create({
         data: {
           userId,
           courseId,
-          paymentType: tipo,
+          paymentType: tipo === 'OXXO' ? PaymentType.OXXO : PaymentType.CARD,
           refunded: false,
           stripeSessionId: session.id,
-          status: 'PENDING' // Agregar este campo a tu modelo Purchase
+          status: 'PENDING'
         },
       });
-      console.log('⏳ Purchase pendiente creado');
+      console.log('⏳ Purchase pendiente creado:', purchase.id);
+    } else {
+      console.log('⏳ Purchase ya existente:', existingPurchase.id);
     }
 
     // Enviar email con instrucciones de pago OXXO
@@ -108,7 +118,70 @@ async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: Pay
     });
 
     if (user?.email) {
-      await enviarEmailInstruccionesOxxo(user, session);
+      try {
+        if (process.env.SMTP_HOST) {
+          await transporter.sendMail({
+            from: `"Français Intelligent" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+            to: user.email,
+            subject: '🧾 Instrucciones para pago en OXXO',
+            html: `
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <style>
+                  body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                  .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                  .header { background: #150354; color: white; padding: 20px; text-align: center; }
+                  .content { background: #f8f9fa; padding: 30px; }
+                  .oxxo-info { background: #A8DADC; padding: 20px; border-radius: 8px; margin: 20px 0; }
+                  .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <div class="header">
+                    <h1>🎓 Français Intelligent</h1>
+                  </div>
+                  <div class="content">
+                    <h2>¡Hola ${user.profile?.nombre || 'estudiante'}!</h2>
+                    
+                    <p>Has generado un pago por OXXO para inscribirte al curso.</p>
+                    
+                    <div class="oxxo-info">
+                      <h3 style="margin-top: 0;">🧾 Instrucciones:</h3>
+                      <ol>
+                        <li>Guarda o imprime tu línea de captura</li>
+                        <li>Acude a cualquier OXXO</li>
+                        <li>Realiza el pago de <strong>$${session.amount_total! / 100} MXN</strong></li>
+                        <li>El pago se reflejará en 24-48 horas</li>
+                      </ol>
+                      <p style="font-size: 1.2em; text-align: center; margin: 20px 0;">
+                        <strong>Línea de captura:</strong><br>
+                        ${session.payment_intent}
+                      </p>
+                    </div>
+
+                    <div class="warning">
+                      <p><strong>⚠️ Importante:</strong></p>
+                      <ul>
+                        <li>Tu pago debe realizarse antes de 3 días</li>
+                        <li>Recibirás un correo de confirmación cuando el pago sea verificado</li>
+                        <li>Tu acceso a la plataforma se activará automáticamente al confirmarse el pago</li>
+                      </ul>
+                    </div>
+
+                    <p>¿Tienes dudas? Contáctanos por el chat de la plataforma.</p>
+                  </div>
+                </div>
+              </body>
+              </html>
+            `
+          });
+          console.log('✅ Email instrucciones OXXO enviado');
+        }
+      } catch (error) {
+        console.error('❌ Error enviando email instrucciones OXXO:', error);
+      }
     }
 
   } catch (error) {
@@ -117,16 +190,22 @@ async function guardarReferenciaPago(session: Stripe.Checkout.Session, tipo: Pay
 }
 
 // Función para procesar pago exitoso (tanto tarjeta como OXXO confirmado)
-async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipo: PaymentType) {
+async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipo: string) {
+  console.log('🔥🔥🔥 PROCESAR PAGO EXITOSO INICIADO 🔥🔥🔥');
+  console.log('Session ID:', session.id);
+  console.log('Tipo:', tipo);
+  console.log('Metadata:', session.metadata);
+
   const { userId, courseId } = session.metadata || {};
 
   if (!userId || !courseId) {
-    console.error('❌ Metadata faltante');
+    console.error('❌ Metadata faltante en procesarPagoExitoso');
     return;
   }
 
   try {
-    // Actualizar payment a PAID
+    // 1. Actualizar payment a PAID
+    console.log('💰 Buscando payment para:', session.id);
     const payment = await prisma.payment.upsert({
       where: { stripeSessionId: session.id },
       update: { status: 'PAID' },
@@ -141,14 +220,18 @@ async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipo: Payme
     });
     console.log('💰 Payment actualizado a PAID:', payment.id);
 
-    // Actualizar purchase a COMPLETED
+    // 2. Actualizar purchase a COMPLETED
+    console.log('💰 Buscando purchase para:', session.id);
     const purchase = await prisma.purchase.upsert({
       where: { stripeSessionId: session.id },
-      update: { status: 'COMPLETED' },
+      update: { 
+        status: 'COMPLETED',
+        paymentType: tipo === 'OXXO' ? PaymentType.OXXO : PaymentType.CARD
+      },
       create: {
         userId,
         courseId,
-        paymentType: tipo,
+        paymentType: tipo === 'OXXO' ? PaymentType.OXXO : PaymentType.CARD,
         refunded: false,
         stripeSessionId: session.id,
         status: 'COMPLETED'
@@ -156,7 +239,8 @@ async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipo: Payme
     });
     console.log('💰 Purchase actualizado a COMPLETED:', purchase.id);
 
-    // Verificar si ya existe enrollment
+    // 3. Verificar si ya existe enrollment
+    console.log('🔍 Verificando enrollment para:', { userId, courseId });
     const existingEnrollment = await prisma.enrollment.findUnique({
       where: {
         userId_courseId: {
@@ -167,29 +251,37 @@ async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipo: Payme
     });
 
     if (!existingEnrollment) {
-      await prisma.enrollment.create({
+      console.log('🔍 Creando nuevo enrollment');
+      const enrollment = await prisma.enrollment.create({
         data: {
           userId,
           courseId
         }
       });
+      console.log('✅ Enrollment creado:', enrollment.id);
 
-      await prisma.course.update({
+      // 4. Incrementar alumnos inscritos
+      console.log('🔍 Incrementando alumnosInscritos para curso:', courseId);
+      const course = await prisma.course.update({
         where: { id: courseId },
         data: {
           alumnosInscritos: { increment: 1 }
         }
       });
+      console.log('✅ Curso actualizado, nuevos alumnos:', course.alumnosInscritos);
+    } else {
+      console.log('ℹ️ Enrollment ya existente:', existingEnrollment.id);
     }
 
-    // ACTIVAR USUARIO (solo ahora para OXXO)
+    // 5. ACTIVAR USUARIO
+    console.log('🔍 Activando usuario:', userId);
     const user = await prisma.user.update({
       where: { id: userId },
       data: { status: 'ACTIVE' },
     });
     console.log(`✅ Usuario ${user.folio} activado`);
 
-    // Enviar email de confirmación
+    // 6. Enviar email de confirmación
     const userWithProfile = await prisma.user.findUnique({
       where: { id: userId },
       include: { profile: true }
@@ -199,16 +291,89 @@ async function procesarPagoExitoso(session: Stripe.Checkout.Session, tipo: Payme
       where: { id: courseId }
     });
 
-    await enviarEmailConfirmacion(userWithProfile, courseData, session, tipo);
+    if (userWithProfile?.email) {
+      try {
+        if (process.env.SMTP_HOST) {
+          const esOxxo = tipo === 'OXXO';
+          
+          await transporter.sendMail({
+            from: `"Français Intelligent" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+            to: userWithProfile.email,
+            subject: esOxxo ? '✅ Pago OXXO confirmado - Inscripción exitosa' : '🎉 ¡Pago exitoso! Confirmación de inscripción',
+            html: `
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <style>
+                  body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                  .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                  .header { background: #150354; color: white; padding: 20px; text-align: center; }
+                  .content { background: #f8f9fa; padding: 30px; }
+                  .credentials { background: #A8DADC; padding: 20px; border-radius: 8px; margin: 20px 0; }
+                  .button { background: #150354; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <div class="header">
+                    <h1>🎓 Français Intelligent</h1>
+                  </div>
+                  <div class="content">
+                    <h2>¡Hola ${userWithProfile.profile?.nombre || 'estudiante'}!</h2>
+                    
+                    <p><strong>✅ ${esOxxo ? 'Tu pago en OXXO ha sido confirmado' : 'Tu pago ha sido procesado exitosamente'}.</strong></p>
+                    
+                    <div class="credentials">
+                      <h3 style="margin-top: 0;">🔐 Tus datos de acceso:</h3>
+                      <p><strong>Folio:</strong> ${userWithProfile.folio}</p>
+                      <p><strong>Contraseña:</strong> La contraseña que estableciste en tu registro</p>
+                      <p style="font-size: 0.9em; color: #666;">
+                        ¿No recuerdas tu contraseña? Puedes recuperarla en la página de login.
+                      </p>
+                    </div>
+
+                    <h3>📚 Detalles del curso:</h3>
+                    <ul>
+                      <li><strong>Curso:</strong> ${courseData?.nivel} ${courseData?.subnivel || ''}</li>
+                      <li><strong>Horario:</strong> ${courseData?.dias} • ${courseData?.horario}</li>
+                      <li><strong>Inicio:</strong> ${courseData?.inicio ? new Date(courseData.inicio).toLocaleDateString('es-MX') : ''}</li>
+                      <li><strong>Fin:</strong> ${courseData?.fin ? new Date(courseData.fin).toLocaleDateString('es-MX') : ''}</li>
+                    </ul>
+
+                    <div style="text-align: center; margin-top: 30px;">
+                      <a href="${process.env.FRONTEND_URL}/login" class="button">
+                        Iniciar sesión
+                      </a>
+                    </div>
+
+                    <p style="margin-top: 30px;">
+                      ¿Tienes dudas? Contáctanos por el chat de la plataforma.<br>
+                      <strong>¡Nos vemos en clase!</strong>
+                    </p>
+                  </div>
+                </div>
+              </body>
+              </html>
+            `
+          });
+          console.log('✅ Email de confirmación enviado');
+        }
+      } catch (error) {
+        console.error('❌ Error enviando email de confirmación:', error);
+      }
+    }
 
     console.log('🎉 Proceso completado exitosamente');
 
   } catch (error) {
     console.error('❌ Error procesando pago exitoso:', error);
+    console.error('Detalles del error:', JSON.stringify(error, null, 2));
   }
 }
 
 async function manejarPagoFallido(session: Stripe.Checkout.Session) {
+  console.log('❌ Manejar pago fallido para sesión:', session.id);
+  
   const { userId, courseId } = session.metadata || {};
 
   try {
@@ -227,148 +392,5 @@ async function manejarPagoFallido(session: Stripe.Checkout.Session) {
     console.log('❌ Pago marcado como fallido');
   } catch (error) {
     console.error('Error manejando pago fallido:', error);
-  }
-}
-
-async function enviarEmailInstruccionesOxxo(user: any, session: Stripe.Checkout.Session) {
-  try {
-    await transporter.sendMail({
-      from: `"Français Intelligent" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
-      to: user.email,
-      subject: '🧾 Instrucciones para pago en OXXO',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: #150354; color: white; padding: 20px; text-align: center; }
-            .content { background: #f8f9fa; padding: 30px; }
-            .oxxo-info { background: #A8DADC; padding: 20px; border-radius: 8px; margin: 20px 0; }
-            .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>🎓 Français Intelligent</h1>
-            </div>
-            <div class="content">
-              <h2>¡Hola ${user.profile?.nombre || 'estudiante'}!</h2>
-              
-              <p>Has generado un pago por OXXO para inscribirte al curso.</p>
-              
-              <div class="oxxo-info">
-                <h3 style="margin-top: 0;">🧾 Instrucciones:</h3>
-                <ol>
-                  <li>Guarda o imprime tu línea de captura</li>
-                  <li>Acude a cualquier OXXO</li>
-                  <li>Realiza el pago de <strong>$${session.amount_total! / 100} MXN</strong></li>
-                  <li>El pago se reflejará en 24-48 horas</li>
-                </ol>
-                <p style="font-size: 1.2em; text-align: center; margin: 20px 0;">
-                  <strong>Línea de captura:</strong><br>
-                  ${session.payment_intent}
-                </p>
-              </div>
-
-              <div class="warning">
-                <p><strong>⚠️ Importante:</strong></p>
-                <ul>
-                  <li>Tu pago debe realizarse antes de 3 días</li>
-                  <li>Recibirás un correo de confirmación cuando el pago sea verificado</li>
-                  <li>Tu acceso a la plataforma se activará automáticamente al confirmarse el pago</li>
-                </ul>
-              </div>
-
-              <p>¿Tienes dudas? Contáctanos por el chat de la plataforma.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `
-    });
-    console.log('✅ Email instrucciones OXXO enviado');
-  } catch (error) {
-    console.error('❌ Error enviando email instrucciones OXXO:', error);
-  }
-}
-
-async function enviarEmailConfirmacion(user: any, course: any, session: Stripe.Checkout.Session, tipo: string) {
-  console.log('📧 Enviando email de confirmación...');
-
-  if (!user?.email) {
-    console.error('❌ Usuario sin email');
-    return;
-  }
-
-  const esOxxo = tipo === 'OXXO';
-
-  try {
-    const info = await transporter.sendMail({
-      from: `"Français Intelligent" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
-      to: user.email,
-      subject: esOxxo ? '✅ Pago OXXO confirmado - Inscripción exitosa' : '🎉 ¡Pago exitoso! Confirmación de inscripción',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: #150354; color: white; padding: 20px; text-align: center; }
-            .content { background: #f8f9fa; padding: 30px; }
-            .credentials { background: #A8DADC; padding: 20px; border-radius: 8px; margin: 20px 0; }
-            .button { background: #150354; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>🎓 Français Intelligent</h1>
-            </div>
-            <div class="content">
-              <h2>¡Hola ${user.profile?.nombre || 'estudiante'}!</h2>
-              
-              <p><strong>✅ ${esOxxo ? 'Tu pago en OXXO ha sido confirmado' : 'Tu pago ha sido procesado exitosamente'}.</strong></p>
-              
-              <div class="credentials">
-                <h3 style="margin-top: 0;">🔐 Tus datos de acceso:</h3>
-                <p><strong>Folio:</strong> ${user.folio}</p>
-                <p><strong>Contraseña:</strong> La contraseña que estableciste en tu registro</p>
-                <p style="font-size: 0.9em; color: #666;">
-                  ¿No recuerdas tu contraseña? Puedes recuperarla en la página de login.
-                </p>
-              </div>
-
-              <h3>📚 Detalles del curso:</h3>
-              <ul>
-                <li><strong>Curso:</strong> ${course.nivel} ${course.subnivel || ''}</li>
-                <li><strong>Horario:</strong> ${course.dias} • ${course.horario}</li>
-                <li><strong>Inicio:</strong> ${new Date(course.inicio).toLocaleDateString('es-MX')}</li>
-                <li><strong>Fin:</strong> ${new Date(course.fin).toLocaleDateString('es-MX')}</li>
-              </ul>
-
-              <div style="text-align: center; margin-top: 30px;">
-                <a href="${process.env.FRONTEND_URL}/login" class="button">
-                  Iniciar sesión
-                </a>
-              </div>
-
-              <p style="margin-top: 30px;">
-                ¿Tienes dudas? Contáctanos por el chat de la plataforma.<br>
-                <strong>¡Nos vemos en clase!</strong>
-              </p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `
-    });
-
-    console.log('✅ Email enviado:', info.messageId);
-  } catch (error) {
-    console.error('❌ Error enviando email:', error);
   }
 }
