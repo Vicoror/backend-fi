@@ -19,7 +19,7 @@
   "jsonwebtoken": "^9.0.2",
   "nodemailer": "^8.0.1",
   "resend": "^6.9.2",
-  "stripe": "^13.11.0"
+  "stripe": "^20.3.1"
  },
  "devDependencies": {
   "@types/bcryptjs": "^2.4.6",
