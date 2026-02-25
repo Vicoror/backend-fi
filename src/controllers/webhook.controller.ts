@@ -15,27 +15,34 @@ export async function stripeWebhook(req: Request, res: Response) {
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     );
-  } catch (err) {
+  } catch (err: any) {
     console.error('❌ Error verificando webhook:', err);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
+  // Stripe object tipado correctamente
+  const session = event.data.object as Stripe.Checkout.Session;
+
   // ============================================
   // CASO 1: Pago con TARJETA (inmediato)
+  // Stripe → payment_status = "paid"
   // ============================================
-  if (event.type === 'checkout.session.completed' && 
-      event.data.object.payment_method_types.includes('card')) {
-    const session = event.data.object as Stripe.Checkout.Session;
+  if (
+    event.type === 'checkout.session.completed' &&
+    session.payment_status === 'paid'
+  ) {
     console.log('💳 Procesando pago con TARJETA:', session.id);
     await procesarPagoTarjeta(session);
   }
 
   // ============================================
-  // CASO 2: Referencia OXXO (cuando se genera el voucher)
+  // CASO 2: Referencia OXXO (voucher generado)
+  // Stripe → payment_status = "unpaid"
   // ============================================
-  if (event.type === 'checkout.session.completed' && 
-      event.data.object.payment_method_types.includes('oxxo')) {
-    const session = event.data.object as Stripe.Checkout.Session;
+  if (
+    event.type === 'checkout.session.completed' &&
+    session.payment_status === 'unpaid'
+  ) {
     console.log('🧾 Generando referencia OXXO:', session.id);
     await guardarReferenciaOxxo(session);
   }
@@ -44,7 +51,6 @@ export async function stripeWebhook(req: Request, res: Response) {
   // CASO 3: Pago OXXO confirmado (24-48h después)
   // ============================================
   if (event.type === 'checkout.session.async_payment_succeeded') {
-    const session = event.data.object as Stripe.Checkout.Session;
     console.log('💰 Pago OXXO CONFIRMADO:', session.id);
     await procesarPagoOxxoConfirmado(session);
   }
