@@ -9,6 +9,7 @@ import webhookRoutes from './routes/webhook.routes';
 import verificarEmailRoutes from './routes/verificar-email.routes';
 import passwordRoutes from './routes/password.routes'
 import aspiranteRoutes from './routes/aspirante.routes';
+import chatRoutes from './routes/chat.routes';  // ✅ Esto está bien importado
 
 const app = express();
 
@@ -48,7 +49,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 // =============================================
-// 4. RUTAS
+// 4. RUTAS - ORDEN OPTIMIZADO
 // =============================================
 app.get('/', (req, res) => {
   res.json({
@@ -59,7 +60,8 @@ app.get('/', (req, res) => {
       auth: '/auth',
       cursos: '/cursos',
       checkout: '/checkout',
-      webhook: '/webhook (POST only)'
+      webhook: '/webhook (POST only)',
+      chat: '/api/chat (send & health)'
     }
   });
 });
@@ -72,12 +74,20 @@ app.get('/health', (_req, res) => {
   });
 });
 
-app.use('/auth', authRoutes);
-app.use('/checkout', checkoutRoutes);
+// 🟢 PRIMERO: Rutas públicas (como chat)
+app.use('/api', chatRoutes);                    // El chat debe ser público
+
+// 🟡 SEGUNDO: Rutas semi-públicas
 app.use('/cursos', cursosRoutes);
-app.use('/registro', registroRoutes);
+app.use('/checkout', checkoutRoutes);
+
+// 🔵 TERCERO: Rutas que requieren autenticación
+app.use('/auth', authRoutes);                   
 app.use('/usuarios', verificarEmailRoutes);
-app.use('/auth', passwordRoutes)
+app.use('/auth', passwordRoutes);
+
+// 🟣 CUARTO: Rutas específicas
+app.use('/registro', registroRoutes);
 app.use('/api/aspirantes', aspiranteRoutes);
 
-export default app;
+export default app;  // ✅ Este export está perfecto
