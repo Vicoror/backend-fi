@@ -277,7 +277,7 @@ async function enviarEmailConfirmacion(user: any, course: any, tipoPago: Payment
         <head>
           <style>
             body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px border-radius: 16px; }
             .header { background: #150354; color: white; padding: 20px; text-align: center; }
             .content { background: #f8f9fa; padding: 30px; }
             .credentials { background: #A8DADC; padding: 20px; border-radius: 8px; margin: 20px 0; }
@@ -351,7 +351,7 @@ async function enviarEmailInstruccionesOxxo(user: any, session: Stripe.Checkout.
         <head>
           <style>
             body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px border-radius: 16px; }
             .header { background: #150354; color: white; padding: 20px; text-align: center; }
             .content { background: #f8f9fa; padding: 30px; }
             .oxxo-info { background: #A8DADC; padding: 20px; border-radius: 8px; margin: 20px 0; }

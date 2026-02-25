@@ -238,7 +238,7 @@ export class ChatEmailService {
       <body>
         <div class="container">
           <div class="header">
-            <h1>📬 Chat FrancésInteligente</h1>
+            <h1>📬 Chat Français Intelligent</h1>
             <p>Nuevo mensaje recibido</p>
           </div>
           
