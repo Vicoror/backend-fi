@@ -6,7 +6,6 @@ import { Request, Response } from 'express'
 const prisma = new PrismaClient()
 
 export async function login(req: Request, res: Response) {
-
   const { folio, password } = req.body
 
   if (!folio || !password) {
@@ -31,15 +30,16 @@ export async function login(req: Request, res: Response) {
     id: user.id,
     role: user.role,
     folio: user.folio,
-     email: user.email,
+    email: user.email,
   })
 
-  // 🍪 COOKIE SEGURA
+  // 🍪 COOKIE CONFIGURADA PARA PRODUCCIÓN
   res.cookie('token', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: true, // Siempre true en producción (HTTPS)
+    sameSite: 'none', // Permite cross-site en producción
     maxAge: 24 * 60 * 60 * 1000,
+    domain: '.vercel.app' // Opcional: permite compartir entre subdominios
   })
 
   res.json({
