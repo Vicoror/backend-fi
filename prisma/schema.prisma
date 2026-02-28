@@ -7,6 +7,119 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id            String       @id @default(uuid())
+  folio         String       @unique
+  email         String       @unique
+  password      String
+  role          Role
+  status        UserStatus   @default(INACTIVE)
+  createdAt     DateTime     @default(now())
+  coursesTaught Course[]     @relation("TeacherCourses")
+  enrollments   Enrollment[]
+  payments      Payment[]
+  profile       Profile?
+  purchases     Purchase[]
+}
+
+model Profile {
+  id              String  @id @default(uuid())
+  userId          String  @unique
+  nombre          String
+  apellidoPaterno String
+  apellidoMaterno String?
+  telefono        String?
+  estado          Estado?
+  user            User    @relation(fields: [userId], references: [id])
+}
+
+model Course {
+  id               String       @id @default(uuid())
+  code             String       @unique
+  nivel            String
+  subnivel         String?
+  cupoMaximo       Int
+  alumnosInscritos Int          @default(0)
+  precio           Int
+  horario          String
+  dias             String
+  duracion         String
+  teacherId        String?
+  createdAt        DateTime     @default(now())
+  activo           Boolean      @default(true)
+  fin              DateTime
+  inicio           DateTime
+  calendarioPdf    String?
+  urlCurso         String?
+  teacher          User?        @relation("TeacherCourses", fields: [teacherId], references: [id])
+  enrollments      Enrollment[]
+  purchases        Purchase[]
+}
+
+model Enrollment {
+  id        String   @id @default(uuid())
+  userId    String
+  courseId  String
+  createdAt DateTime @default(now())
+  course    Course   @relation(fields: [courseId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, courseId])
+}
+
+model Purchase {
+  id              String      @id @default(uuid())
+  userId          String
+  courseId        String
+  paymentType     PaymentType
+  refunded        Boolean     @default(false)
+  stripeSessionId String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  status          String      @default("COMPLETED")
+  course          Course      @relation(fields: [courseId], references: [id])
+  user            User        @relation(fields: [userId], references: [id])
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  userId          String
+  stripeSessionId String   @unique
+  stripePaymentId String?
+  amount          Int
+  currency        String
+  status          String
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  email     String
+  codigo    String
+  expiraEn  DateTime
+  usado     Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([email, codigo])
+  @@index([email])
+  @@index([expiraEn])
+}
+
+model Aspirante {
+  id        String   @id @default(uuid())
+  email     String   @db.VarChar(50)
+  horario1  String
+  horario2  String
+  nivel     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([nivel])
+}
+
 enum Role {
   STUDENT
   TEACHER
@@ -23,22 +136,6 @@ enum PaymentType {
   OXXO
 }
 
-model User {
-  id       String     @id @default(uuid())
-  folio    String     @unique
-  email    String     @unique
-  password String
-  role     Role
-  status   UserStatus @default(INACTIVE)
-
-  profile       Profile?
-  purchases     Purchase[]
-  enrollments   Enrollment[]
-  coursesTaught Course[]     @relation("TeacherCourses")
-  payments      Payment[]
-
-  createdAt DateTime @default(now())
-}
 enum Estado {
   AGUASCALIENTES
   BAJA_CALIFORNIA
@@ -72,125 +169,4 @@ enum Estado {
   VERACRUZ
   YUCATAN
   ZACATECAS
-}
-
-model Profile {
-  id     String @id @default(uuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id])
-
-  nombre          String
-  apellidoPaterno String
-  apellidoMaterno String?
-  telefono        String?
-  estado          Estado?
-}
-
-// En schema.prisma, agrega el campo urlCurso al modelo Course
-
-model Course {
-  id       String @id @default(uuid())
-  code     String @unique
-  nivel    String
-  subnivel String?
-
-  cupoMaximo       Int
-  alumnosInscritos Int @default(0)
-
-  precio   Int
-  horario  String
-  dias     String
-  duracion String
-
-  inicio DateTime
-  fin    DateTime
-
-  activo Boolean @default(true)
-
-  teacherId String?
-  teacher   User? @relation("TeacherCourses", fields: [teacherId], references: [id])
-
-  enrollments Enrollment[]
-  purchases   Purchase[]
-
-  // 📌 NUEVO CAMPO
-  urlCurso        String?  // URL para las clases en línea (Zoom, Meet, etc.)
-  calendarioPdf   String?  // URL del PDF del calendario subido por admin
-
-  createdAt DateTime @default(now())
-}
-
-
-model Enrollment {
-  id       String @id @default(uuid())
-  userId   String
-  courseId String
-
-  user   User   @relation(fields: [userId], references: [id])
-  course Course @relation(fields: [courseId], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@unique([userId, courseId])
-}
-
-model Purchase {
-  id String @id @default(uuid())
-
-  userId   String
-  courseId String
-
-  user   User   @relation(fields: [userId], references: [id])
-  course Course @relation(fields: [courseId], references: [id])
-
-  paymentType PaymentType
-  refunded    Boolean     @default(false)
-
-  stripeSessionId String? @unique
-
-  status    String   @default("COMPLETED") // PENDING, COMPLETED, FAILED
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Payment {
-  id              String   @id @default(uuid())
-  userId          String
-  stripeSessionId String   @unique
-  stripePaymentId String?
-  amount          Int
-  currency        String
-  status          String
-  createdAt       DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-}
-
-// Agregar este modelo a tu schema.prisma
-model PasswordReset {
-  id        String   @id @default(uuid())
-  email     String
-  codigo    String   // Código de 6 dígitos
-  expiraEn  DateTime
-  usado     Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([email, codigo])
-  @@index([email])
-  @@index([expiraEn])
-}
-
-// Agregar este modelo a tu schema.prisma
-model Aspirante {
-  id        String   @id @default(uuid())
-  email     String   @db.VarChar(50)
-  horario1  String   // Horario preferente 1
-  horario2  String   // Horario preferente 2  
-  nivel     String   // Nivel de interés
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([email])
-  @@index([nivel])
 }

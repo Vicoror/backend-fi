@@ -1,13 +1,14 @@
 import jwt from 'jsonwebtoken'
 import { Request, Response, NextFunction } from 'express'
-import { AuthUser } from '../../src/types/express'
+import { PrismaClient } from '@prisma/client'
 
-export function requireAuth(
+const prisma = new PrismaClient()
+
+export async function requireAuth(
   req: Request,
   res: Response,
   next: NextFunction
 ) {
-  console.log("COOKIES:", req.cookies) // 👈 agrega esto
   const token = req.cookies?.token
 
   if (!token) {
@@ -18,7 +19,19 @@ export function requireAuth(
     const decoded = jwt.verify(
       token,
       process.env.JWT_SECRET as string
-    ) as AuthUser
+    ) as any
+
+    // ⭐ verificar estado del usuario
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id }
+    })
+
+    if (!user || user.status !== 'ACTIVE') {
+      return res.status(403).json({
+        message: 'Usuario inactivo. Inscríbete para tener acceso a nuestros cursos.',
+        redirectTo: '/inscription'
+      })
+    }
 
     req.user = decoded
     next()
