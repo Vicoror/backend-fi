@@ -39,7 +39,7 @@ export async function login(req: Request, res: Response) {
     secure: true, // Siempre true en producción (HTTPS)
     sameSite: 'none', // Permite cross-site en producción
     maxAge: 24 * 60 * 60 * 1000,
-    domain: '.vercel.app' // Opcional: permite compartir entre subdominios
+    //domain: '.vercel.app' // Opcional: permite compartir entre subdominios
   })
 
   res.json({
