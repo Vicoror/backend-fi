@@ -23,6 +23,7 @@ app.use(cors({
       'http://localhost:5173',
       'https://francaisintelligent.vercel.app',
       'https://francaisintelligentback.vercel.app',
+      'https://backend-fi.vercel.app',
     ];
     
     if (!origin) return callback(null, true);
