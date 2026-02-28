@@ -7,6 +7,7 @@ export function requireAuth(
   res: Response,
   next: NextFunction
 ) {
+  console.log("COOKIES:", req.cookies) // 👈 agrega esto
   const token = req.cookies?.token
 
   if (!token) {
