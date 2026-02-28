@@ -16,9 +16,20 @@ export async function login(req: Request, res: Response) {
     where: { folio },
   })
 
-  if (!user || user.status !== 'ACTIVE') {
-    return res.status(401).json({ message: 'Credenciales inválidas' })
-  }
+  // Usuario no existe
+if (!user) {
+  return res.status(401).json({
+    message: 'Credenciales inválidas'
+  })
+}
+
+// ⭐ Usuario existe pero está inactivo
+if (user.status !== 'ACTIVE') {
+  return res.status(403).json({
+    message: 'Tu cuenta está inactiva. Inscríbete a uno de nuestros cursos.',
+    redirectTo: '/inscription'
+  })
+}
 
   const isValid = await bcrypt.compare(password, user.password)
 
