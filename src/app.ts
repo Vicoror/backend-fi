@@ -10,6 +10,7 @@ import verificarEmailRoutes from './routes/verificar-email.routes';
 import passwordRoutes from './routes/password.routes'
 import aspiranteRoutes from './routes/aspirante.routes';
 import chatRoutes from './routes/chat.routes';  // ✅ Esto está bien importado
+import studentRoutes from './routes/student.routes';
 
 const app = express();
 
@@ -89,5 +90,6 @@ app.use('/auth', passwordRoutes);
 // 🟣 CUARTO: Rutas específicas
 app.use('/registro', registroRoutes);
 app.use('/api/aspirantes', aspiranteRoutes);
+app.use('/api/student', studentRoutes);
 
 export default app;  // ✅ Este export está perfecto

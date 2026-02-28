@@ -86,6 +86,8 @@ model Profile {
   estado          Estado?
 }
 
+// En schema.prisma, agrega el campo urlCurso al modelo Course
+
 model Course {
   id       String @id @default(uuid())
   code     String @unique
@@ -110,6 +112,10 @@ model Course {
 
   enrollments Enrollment[]
   purchases   Purchase[]
+
+  // 📌 NUEVO CAMPO
+  urlCurso        String?  // URL para las clases en línea (Zoom, Meet, etc.)
+  calendarioPdf   String?  // URL del PDF del calendario subido por admin
 
   createdAt DateTime @default(now())
 }
