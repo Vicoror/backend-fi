@@ -1,6 +1,7 @@
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
+import { v2 as cloudinary } from 'cloudinary'; // ← AGREGAR ESTA LÍNEA
 import authRoutes from './routes/auth.routes';
 import checkoutRoutes from './routes/checkout';
 import cursosRoutes from './routes/cursos.routes';
@@ -12,8 +13,16 @@ import aspiranteRoutes from './routes/aspirante.routes';
 import chatRoutes from './routes/chat.routes';  // ✅ Esto está bien importado
 import studentRoutes from './routes/student.routes';
 import carruselRoutes from './routes/carrusel.routes';
+// ❌ NO importar cloudinarySignatureRoutes desde ./api/
 
 const app = express();
+
+// Configurar Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 // =============================================
 // 1. PRIMERO: CORS (SIEMPRE PRIMERO)
@@ -81,7 +90,7 @@ app.get('/health', (_req, res) => {
 
 // 🟢 PRIMERO: Rutas públicas (como chat)
 app.use('/api', chatRoutes);  
-app.use('/api/carrusel', carruselRoutes);                  // El chat debe ser público
+app.use('/api/carrusel', carruselRoutes);
 
 // 🟡 SEGUNDO: Rutas semi-públicas
 app.use('/cursos', cursosRoutes);
@@ -97,4 +106,59 @@ app.use('/registro', registroRoutes);
 app.use('/api/aspirantes', aspiranteRoutes);
 app.use('/api/student', studentRoutes);
 
-export default app;  // ✅ Este export está perfecto
+// =============================================
+// RUTA DE FIRMA DE CLOUDINARY
+// =============================================
+/**
+ * GET /api/cloudinary-signature
+ * Endpoint para obtener firma de Cloudinary para subida directa desde frontend
+ */
+app.get('/api/cloudinary-signature', async (req, res) => {
+  try {
+    // Configurar CORS adicional si es necesario
+    const origin = req.headers.origin;
+    if (origin && origin.includes('francaisintelligent.vercel.app')) {
+      res.header('Access-Control-Allow-Origin', origin);
+    } else {
+      res.header('Access-Control-Allow-Origin', 'https://francaisintelligent.vercel.app');
+    }
+    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+
+    // Verificar que las variables de entorno existen
+    if (!process.env.CLOUDINARY_API_SECRET) {
+      console.error('CLOUDINARY_API_SECRET no está configurado');
+      return res.status(500).json({ error: 'Configuración de Cloudinary incompleta' });
+    }
+
+    const timestamp = Math.round(new Date().getTime() / 1000);
+    
+    // Crear la firma
+    const signature = cloudinary.utils.api_sign_request(
+      {
+        timestamp,
+        folder: 'carrusel',
+      },
+      process.env.CLOUDINARY_API_SECRET
+    );
+
+    console.log('✅ Firma de Cloudinary generada correctamente');
+
+    res.json({
+      signature,
+      timestamp,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      folder: 'carrusel',
+    });
+  } catch (error) {
+    console.error('❌ Error generando firma de Cloudinary:', error);
+    res.status(500).json({ error: 'Error al generar firma de Cloudinary' });
+  }
+});
+
+export default app;
