@@ -36,10 +36,14 @@ const fileFilter = (
     }
 };
 
+// Aumentar límites de multer
 const upload = multer({ 
-    storage,
-    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
-    fileFilter
+  storage,
+  limits: { 
+    fileSize: 100 * 1024 * 1024, // 100MB
+    fieldSize: 100 * 1024 * 1024
+  },
+  fileFilter
 });
 
 // ============================================
