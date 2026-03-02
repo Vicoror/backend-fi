@@ -1,62 +1,11 @@
 import { Router, Request, Response } from 'express';
-import multer, { FileFilterCallback } from 'multer';
 import { PrismaClient } from '@prisma/client';
-import { v2 as cloudinary } from 'cloudinary';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const router = Router();
 const prisma = new PrismaClient();
-
-// Configurar Cloudinary
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-});
-
-// ============================================
-// CONFIGURACIÓN DE MULTER
-// ============================================
-
-// Configurar Multer para memory storage
-const storage = multer.memoryStorage();
-
-// Filtro para validar tipos de archivo
-const fileFilter = (
-    req: Request,
-    file: Express.Multer.File,
-    cb: FileFilterCallback
-) => {
-    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
-        cb(null, true);
-    } else {
-        cb(new Error('Solo se permiten imágenes o videos'));
-    }
-};
-
-// Aumentar límites de multer
-const upload = multer({ 
-  storage,
-  limits: { 
-    fileSize: 100 * 1024 * 1024, // 100MB
-    fieldSize: 100 * 1024 * 1024
-  },
-  fileFilter
-});
-
-// ============================================
-// TIPOS PARA EXTENDER EL REQUEST DE EXPRESS
-// ============================================
-
-// Extendemos la interfaz Request para incluir el archivo
-declare module 'express-serve-static-core' {
-    interface Request {
-        file?: Express.Multer.File;
-        files?: Express.Multer.File[];
-    }
-}
 
 // ============================================
 // RUTAS PÚBLICAS
@@ -108,17 +57,15 @@ router.get('/admin', async (req: Request, res: Response) => {
 
 /**
  * POST /api/carrusel
- * Crea un nuevo item en el carrusel
+ * Crea un nuevo item en el carrusel (recibe JSON con la URL ya de Cloudinary)
  */
-router.post('/', upload.single('file'), async (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
     try {
-        const { titulo, tipo, link, orden, fechaInicio, fechaFin, activo } = req.body;
-        
-        // ✅ AHORA TypeScript reconoce req.file gracias a @types/multer
-        const file = req.file;
+        const { titulo, tipo, url, link, orden, fechaInicio, fechaFin, activo } = req.body;
 
-        if (!file) {
-            return res.status(400).json({ error: 'Archivo requerido' });
+        // Validaciones básicas
+        if (!titulo || !tipo || !url || !orden || !fechaInicio || !fechaFin) {
+            return res.status(400).json({ error: 'Faltan campos requeridos' });
         }
 
         // Validar que no haya más de 5 items
@@ -133,7 +80,7 @@ router.post('/', upload.single('file'), async (req: Request, res: Response) => {
         });
 
         if (existingOrder) {
-            // Reordenar items existentes
+            // Reordenar items existentes (correr hacia adelante)
             const itemsToUpdate = await prisma.carruselItem.findMany({
                 where: { orden: { gte: parseInt(orden) } },
                 orderBy: { orden: 'desc' }
@@ -147,38 +94,21 @@ router.post('/', upload.single('file'), async (req: Request, res: Response) => {
             }
         }
 
-        // Subir a Cloudinary
-        const result = await new Promise((resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream(
-                {
-                    resource_type: tipo === 'VIDEO' ? 'video' : 'auto',
-                    folder: 'carrusel',
-                    public_id: `carrusel_${Date.now()}`,
-                },
-                (error, result) => {
-                    if (error) reject(error);
-                    else resolve(result);
-                }
-            );
-
-            uploadStream.end(file.buffer);
-        });
-
         // Crear el item
         const newItem = await prisma.carruselItem.create({
             data: {
                 titulo,
                 tipo,
-                url: (result as any).secure_url,
+                url,
                 link: link || null,
                 orden: parseInt(orden),
                 fechaInicio: new Date(fechaInicio),
                 fechaFin: new Date(fechaFin),
-                activo: activo === 'true',
+                activo: activo === true || activo === 'true',
             },
         });
 
-        res.json(newItem);
+        res.status(201).json(newItem);
     } catch (error) {
         console.error('Error al crear item:', error);
         res.status(500).json({ error: 'Error al crear item' });
@@ -194,47 +124,56 @@ router.put('/:id', async (req: Request, res: Response) => {
         const { id } = req.params;
         const updateData = req.body;
 
+        // Validar que el item existe
+        const existingItem = await prisma.carruselItem.findUnique({
+            where: { id }
+        });
+
+        if (!existingItem) {
+            return res.status(404).json({ error: 'Item no encontrado' });
+        }
+
         // Si se está actualizando el orden
-        if (updateData.orden) {
-            const currentItem = await prisma.carruselItem.findUnique({
-                where: { id }
-            });
-
-            if (currentItem && currentItem.orden !== parseInt(updateData.orden)) {
-                // Reordenar si es necesario
-                const itemsInRange = await prisma.carruselItem.findMany({
+        if (updateData.orden && updateData.orden !== existingItem.orden) {
+            const newOrden = parseInt(updateData.orden);
+            
+            if (existingItem.orden < newOrden) {
+                // Mover hacia adelante: los items entre medias retroceden
+                await prisma.carruselItem.updateMany({
                     where: {
-                        NOT: { id },
                         orden: {
-                            gte: Math.min(currentItem.orden, parseInt(updateData.orden)),
-                            lte: Math.max(currentItem.orden, parseInt(updateData.orden))
+                            gt: existingItem.orden,
+                            lte: newOrden
                         }
-                    }
+                    },
+                    data: { orden: { decrement: 1 } }
                 });
-
-                for (const item of itemsInRange) {
-                    if (currentItem.orden < parseInt(updateData.orden)) {
-                        await prisma.carruselItem.update({
-                            where: { id: item.id },
-                            data: { orden: item.orden - 1 }
-                        });
-                    } else {
-                        await prisma.carruselItem.update({
-                            where: { id: item.id },
-                            data: { orden: item.orden + 1 }
-                        });
-                    }
-                }
+            } else {
+                // Mover hacia atrás: los items entre medias avanzan
+                await prisma.carruselItem.updateMany({
+                    where: {
+                        orden: {
+                            gte: newOrden,
+                            lt: existingItem.orden
+                        }
+                    },
+                    data: { orden: { increment: 1 } }
+                });
             }
         }
 
+        // Actualizar el item
         const updatedItem = await prisma.carruselItem.update({
             where: { id },
             data: {
-                ...updateData,
+                titulo: updateData.titulo,
+                tipo: updateData.tipo,
+                url: updateData.url,
+                link: updateData.link,
                 orden: updateData.orden ? parseInt(updateData.orden) : undefined,
                 fechaInicio: updateData.fechaInicio ? new Date(updateData.fechaInicio) : undefined,
                 fechaFin: updateData.fechaFin ? new Date(updateData.fechaFin) : undefined,
+                activo: updateData.activo !== undefined ? updateData.activo : undefined,
             },
         });
 
@@ -242,6 +181,64 @@ router.put('/:id', async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Error al actualizar item:', error);
         res.status(500).json({ error: 'Error al actualizar item' });
+    }
+});
+
+/**
+ * PATCH /api/carrusel/:id
+ * Actualización parcial (útil para cambiar orden específicamente)
+ */
+router.patch('/:id', async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { orden } = req.body;
+
+        if (!orden) {
+            return res.status(400).json({ error: 'Orden requerido' });
+        }
+
+        const existingItem = await prisma.carruselItem.findUnique({
+            where: { id }
+        });
+
+        if (!existingItem) {
+            return res.status(404).json({ error: 'Item no encontrado' });
+        }
+
+        const newOrden = parseInt(orden);
+
+        // Reordenar si es necesario
+        if (existingItem.orden < newOrden) {
+            await prisma.carruselItem.updateMany({
+                where: {
+                    orden: {
+                        gt: existingItem.orden,
+                        lte: newOrden
+                    }
+                },
+                data: { orden: { decrement: 1 } }
+            });
+        } else if (existingItem.orden > newOrden) {
+            await prisma.carruselItem.updateMany({
+                where: {
+                    orden: {
+                        gte: newOrden,
+                        lt: existingItem.orden
+                    }
+                },
+                data: { orden: { increment: 1 } }
+            });
+        }
+
+        const updatedItem = await prisma.carruselItem.update({
+            where: { id },
+            data: { orden: newOrden },
+        });
+
+        res.json(updatedItem);
+    } catch (error) {
+        console.error('Error al actualizar orden:', error);
+        res.status(500).json({ error: 'Error al actualizar orden' });
     }
 });
 
@@ -267,7 +264,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
             where: { id }
         });
 
-        // Reordenar los items restantes
+        // Reordenar los items restantes (los que estaban después)
         await prisma.carruselItem.updateMany({
             where: { orden: { gt: item.orden } },
             data: { orden: { decrement: 1 } }
