@@ -108,6 +108,8 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // PATCH - Actualizar orden específicamente
+
+// PATCH - Actualizar orden específicamente
 router.patch('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -119,7 +121,7 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
     const newOrden = parseInt(orden);
     if (isNaN(newOrden) || newOrden < 1 || newOrden > 5) {
-      return res.status(400).json({ error: 'Orden debe ser un número entre 1 y 5' });
+      return res.status(400).json({ error: 'Orden debe ser número entre 1 y 5' });
     }
 
     // Obtener el item actual
@@ -133,13 +135,25 @@ router.patch('/:id', async (req: Request, res: Response) => {
 
     // Si el orden es el mismo, no hacer nada
     if (currentItem.orden === newOrden) {
-      return res.json(currentItem);
+      const allItems = await prisma.carruselItem.findMany({
+        orderBy: { orden: 'asc' }
+      });
+      return res.json(allItems);
     }
 
-    // Usar transacción para reordenar
+    // Usar transacción con orden específico para evitar conflictos de unicidad
     await prisma.$transaction(async (tx) => {
       if (currentItem.orden < newOrden) {
-        // Mover hacia adelante: los items entre medias retroceden
+        // CASO 1: Mover hacia adelante (ej: de 2 a 4)
+        // Necesitamos: 2→4, los que estaban en 3 y 4 deben bajar a 2 y 3
+        
+        // Paso 1: Mover temporalmente el item actual a un valor fuera de rango (ej: 99)
+        await tx.carruselItem.update({
+          where: { id },
+          data: { orden: 99 } // Valor temporal fuera de 1-5
+        });
+        
+        // Paso 2: Bajar los items intermedios (3 y 4 → 2 y 3)
         await tx.carruselItem.updateMany({
           where: {
             orden: {
@@ -149,8 +163,24 @@ router.patch('/:id', async (req: Request, res: Response) => {
           },
           data: { orden: { decrement: 1 } }
         });
+        
+        // Paso 3: Colocar el item en su nueva posición
+        await tx.carruselItem.update({
+          where: { id },
+          data: { orden: newOrden }
+        });
+        
       } else {
-        // Mover hacia atrás: los items entre medias avanzan
+        // CASO 2: Mover hacia atrás (ej: de 4 a 2)
+        // Necesitamos: 4→2, los que estaban en 2 y 3 deben subir a 3 y 4
+        
+        // Paso 1: Mover temporalmente el item actual a un valor fuera de rango
+        await tx.carruselItem.update({
+          where: { id },
+          data: { orden: 99 }
+        });
+        
+        // Paso 2: Subir los items intermedios (2 y 3 → 3 y 4)
         await tx.carruselItem.updateMany({
           where: {
             orden: {
@@ -160,13 +190,13 @@ router.patch('/:id', async (req: Request, res: Response) => {
           },
           data: { orden: { increment: 1 } }
         });
+        
+        // Paso 3: Colocar el item en su nueva posición
+        await tx.carruselItem.update({
+          where: { id },
+          data: { orden: newOrden }
+        });
       }
-
-      // Actualizar el item
-      await tx.carruselItem.update({
-        where: { id },
-        data: { orden: newOrden }
-      });
     });
 
     // Obtener todos los items actualizados
@@ -177,247 +207,101 @@ router.patch('/:id', async (req: Request, res: Response) => {
     res.json(updatedItems);
   } catch (error) {
     console.error('Error al actualizar orden:', error);
-    res.status(500).json({ error: 'Error al actualizar orden' });
+    res.status(500).json({ 
+      error: 'Error al actualizar orden',
+      details: error instanceof Error ? error.message : String(error)
+    });
   }
 });
-
+// PUT - Actualizar item completo
 // PUT - Actualizar item completo
 router.put('/:id', async (req: Request, res: Response) => {
-  const startTime = Date.now();
-  console.log('\n========== 🔵 PUT /api/carrusel/:id ==========');
-  console.log(`🆔 ID recibido: ${req.params.id}`);
-  console.log(`📦 Body recibido:`, JSON.stringify(req.body, null, 2));
-  console.log(`🌐 URL completa: ${req.protocol}://${req.get('host')}${req.originalUrl}`);
-
   try {
     const { id } = req.params;
     const updateData = req.body;
 
-    // PASO 1: Verificar formato del ID
-    console.log(`\n📋 PASO 1 - Validando ID: ${id}`);
-    if (!id || id.length < 10) {
-      console.log('❌ ID inválido o demasiado corto');
-      return res.status(400).json({ error: 'ID inválido' });
+    // Validar que el item existe
+    const existingItem = await prisma.carruselItem.findUnique({
+      where: { id }
+    });
+
+    if (!existingItem) {
+      return res.status(404).json({ error: 'Item no encontrado' });
     }
 
-    // PASO 2: Verificar conexión a la base de datos
-    console.log(`\n📋 PASO 2 - Verificando conexión a DB...`);
-    try {
-      await prisma.$queryRaw`SELECT 1`;
-      console.log('✅ Conexión a DB exitosa');
-    } catch (dbError) {
-      console.error('❌ Error de conexión a DB:', dbError);
-      return res.status(500).json({ 
-        error: 'Error de conexión a base de datos',
-        details: dbError instanceof Error ? dbError.message : String(dbError)
-      });
-    }
-
-    // PASO 3: Buscar el item por ID
-    console.log(`\n📋 PASO 3 - Buscando item con ID: ${id}`);
-    let existingItem;
-    try {
-      existingItem = await prisma.carruselItem.findUnique({
-        where: { id }
-      });
-      
-      if (!existingItem) {
-        console.log(`❌ Item NO encontrado para ID: ${id}`);
-        // Listar todos los IDs disponibles para debugging
-        const allItems = await prisma.carruselItem.findMany({
-          select: { id: true, titulo: true, orden: true }
-        });
-        console.log('📋 IDs disponibles en DB:', allItems.map(i => ({ id: i.id, titulo: i.titulo })));
-        
-        return res.status(404).json({ 
-          error: 'Item no encontrado',
-          message: `No existe item con ID: ${id}`
-        });
-      }
-      console.log('✅ Item encontrado:', {
-        id: existingItem.id,
-        titulo: existingItem.titulo,
-        orden: existingItem.orden,
-        tipo: existingItem.tipo
-      });
-    } catch (findError) {
-      console.error('❌ Error al buscar item:', findError);
-      return res.status(500).json({ 
-        error: 'Error al buscar item',
-        details: findError instanceof Error ? findError.message : String(findError)
-      });
-    }
-
-    // PASO 4: Validar datos de actualización
-    console.log(`\n📋 PASO 4 - Validando datos de actualización...`);
-    const dataToUpdate: any = {};
-
-    // Validar título
-    if (updateData.titulo !== undefined) {
-      if (typeof updateData.titulo !== 'string' || updateData.titulo.trim() === '') {
-        return res.status(400).json({ error: 'Título inválido' });
-      }
-      dataToUpdate.titulo = updateData.titulo;
-      console.log(`  - Título: "${existingItem.titulo}" -> "${updateData.titulo}"`);
-    }
-
-    // Validar tipo
-    if (updateData.tipo !== undefined) {
-      if (!['IMAGEN', 'VIDEO'].includes(updateData.tipo)) {
-        return res.status(400).json({ error: 'Tipo inválido' });
-      }
-      dataToUpdate.tipo = updateData.tipo;
-      console.log(`  - Tipo: ${existingItem.tipo} -> ${updateData.tipo}`);
-    }
-
-    // Validar URL
-    if (updateData.url !== undefined) {
-      if (typeof updateData.url !== 'string' || !updateData.url.startsWith('http')) {
-        return res.status(400).json({ error: 'URL inválida' });
-      }
-      dataToUpdate.url = updateData.url;
-      console.log(`  - URL: actualizada (${updateData.url.substring(0, 50)}...)`);
-    }
-
-    // Validar link
-    if (updateData.link !== undefined) {
-      dataToUpdate.link = updateData.link || null;
-      console.log(`  - Link: ${updateData.link || 'ninguno'}`);
-    }
-
-    // Validar fechas
-    if (updateData.fechaInicio !== undefined) {
-      const fecha = new Date(updateData.fechaInicio);
-      if (isNaN(fecha.getTime())) {
-        return res.status(400).json({ error: 'Fecha de inicio inválida' });
-      }
-      dataToUpdate.fechaInicio = fecha;
-      console.log(`  - Fecha Inicio: ${updateData.fechaInicio}`);
-    }
-
-    if (updateData.fechaFin !== undefined) {
-      const fecha = new Date(updateData.fechaFin);
-      if (isNaN(fecha.getTime())) {
-        return res.status(400).json({ error: 'Fecha de fin inválida' });
-      }
-      dataToUpdate.fechaFin = fecha;
-      console.log(`  - Fecha Fin: ${updateData.fechaFin}`);
-    }
-
-    // Validar activo
-    if (updateData.activo !== undefined) {
-      dataToUpdate.activo = updateData.activo === true || updateData.activo === 'true';
-      console.log(`  - Activo: ${dataToUpdate.activo}`);
-    }
-
-    // PASO 5: Procesar cambio de orden (si existe)
-    if (updateData.orden !== undefined) {
-      console.log(`\n📋 PASO 5 - Procesando cambio de orden...`);
+    // Procesar cambio de orden si existe
+    if (updateData.orden !== undefined && updateData.orden !== existingItem.orden) {
       const newOrden = parseInt(updateData.orden);
       
-      if (isNaN(newOrden) || newOrden < 1 || newOrden > 5) {
-        return res.status(400).json({ error: 'Orden debe ser número entre 1 y 5' });
-      }
-
-      console.log(`  - Orden actual: ${existingItem.orden}, Nuevo orden: ${newOrden}`);
-
-      if (newOrden !== existingItem.orden) {
-        try {
-          await prisma.$transaction(async (tx) => {
-            if (existingItem.orden < newOrden) {
-              // Mover hacia adelante
-              console.log(`  ➡️ Moviendo hacia adelante: items entre ${existingItem.orden + 1} y ${newOrden} retroceden -1`);
-              await tx.carruselItem.updateMany({
-                where: { 
-                  orden: { 
-                    gt: existingItem.orden, 
-                    lte: newOrden 
-                  } 
-                },
-                data: { orden: { decrement: 1 } }
-              });
-            } else if (existingItem.orden > newOrden) {
-              // Mover hacia atrás
-              console.log(`  ⬅️ Moviendo hacia atrás: items entre ${newOrden} y ${existingItem.orden - 1} avanzan +1`);
-              await tx.carruselItem.updateMany({
-                where: { 
-                  orden: { 
-                    gte: newOrden, 
-                    lt: existingItem.orden 
-                  } 
-                },
-                data: { orden: { increment: 1 } }
-              });
-            }
+      // Usar la misma lógica segura que en PATCH
+      await prisma.$transaction(async (tx) => {
+        if (existingItem.orden < newOrden) {
+          // Mover hacia adelante
+          await tx.carruselItem.update({
+            where: { id },
+            data: { orden: 99 }
           });
-          console.log('✅ Reordenamiento completado');
-          dataToUpdate.orden = newOrden;
-        } catch (orderError) {
-          console.error('❌ Error en reordenamiento:', orderError);
-          return res.status(500).json({ 
-            error: 'Error al reordenar items',
-            details: orderError instanceof Error ? orderError.message : String(orderError)
+          
+          await tx.carruselItem.updateMany({
+            where: {
+              orden: {
+                gt: existingItem.orden,
+                lte: newOrden
+              }
+            },
+            data: { orden: { decrement: 1 } }
+          });
+        } else {
+          // Mover hacia atrás
+          await tx.carruselItem.update({
+            where: { id },
+            data: { orden: 99 }
+          });
+          
+          await tx.carruselItem.updateMany({
+            where: {
+              orden: {
+                gte: newOrden,
+                lt: existingItem.orden
+              }
+            },
+            data: { orden: { increment: 1 } }
           });
         }
-      } else {
-        console.log('  ℹ️ El orden no cambió');
-      }
-    }
-
-    // PASO 6: Actualizar el item
-    console.log(`\n📋 PASO 6 - Actualizando item con datos:`, dataToUpdate);
-    
-    let updatedItem;
-    try {
-      updatedItem = await prisma.carruselItem.update({
-        where: { id },
-        data: dataToUpdate,
-      });
-      console.log('✅ Item actualizado exitosamente:', {
-        id: updatedItem.id,
-        titulo: updatedItem.titulo,
-        orden: updatedItem.orden
-      });
-    } catch (updateError) {
-      console.error('❌ Error en update:', updateError);
-      
-      // Verificar si es error de clave única (orden duplicado)
-      if (updateError instanceof Error && updateError.message.includes('Unique constraint')) {
-        return res.status(409).json({ 
-          error: 'Conflicto de orden',
-          message: 'El orden especificado ya está ocupado'
-        });
-      }
-      
-      return res.status(500).json({ 
-        error: 'Error al actualizar item',
-        details: updateError instanceof Error ? updateError.message : String(updateError)
       });
     }
 
-    const elapsedTime = Date.now() - startTime;
-    console.log(`\n✅✅✅ PUT completado en ${elapsedTime}ms`);
+    // Preparar datos para actualizar
+    const dataToUpdate: any = {};
+    if (updateData.titulo) dataToUpdate.titulo = updateData.titulo;
+    if (updateData.tipo) dataToUpdate.tipo = updateData.tipo;
+    if (updateData.url) dataToUpdate.url = updateData.url;
+    if (updateData.link !== undefined) dataToUpdate.link = updateData.link;
+    if (updateData.orden) dataToUpdate.orden = parseInt(updateData.orden);
+    if (updateData.fechaInicio) dataToUpdate.fechaInicio = new Date(updateData.fechaInicio);
+    if (updateData.fechaFin) dataToUpdate.fechaFin = new Date(updateData.fechaFin);
+    if (updateData.activo !== undefined) dataToUpdate.activo = updateData.activo;
 
-    // PASO 7: Opcional - obtener todos los items para refrescar
+    // Actualizar el item
+    const updatedItem = await prisma.carruselItem.update({
+      where: { id },
+      data: dataToUpdate,
+    });
+
+    // Obtener todos los items para refrescar
     const allItems = await prisma.carruselItem.findMany({
       orderBy: { orden: 'asc' }
     });
 
     res.json({
-      message: 'Item actualizado correctamente',
       updatedItem,
-      allItems // Opcional: enviar todos los items actualizados
+      allItems
     });
-
   } catch (error) {
-    console.error('\n❌❌❌ Error CRÍTICO no manejado:', error);
-    const elapsedTime = Date.now() - startTime;
-    console.log(`⏱️ Tiempo hasta error: ${elapsedTime}ms`);
-    
+    console.error('Error al actualizar item:', error);
     res.status(500).json({ 
-      error: 'Error interno del servidor',
-      message: error instanceof Error ? error.message : 'Error desconocido',
-      time: elapsedTime
+      error: 'Error al actualizar item',
+      details: error instanceof Error ? error.message : String(error)
     });
   }
 });
