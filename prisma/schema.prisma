@@ -120,6 +120,29 @@ model Aspirante {
   @@index([nivel])
 }
 
+model CarruselItem {
+  id          String   @id @default(cuid())
+  titulo      String
+  tipo        TipoMedia // "IMAGEN" o "VIDEO"
+  url         String   // URL de Cloudinary
+  orden       Int      // 1-5 para secuencia
+  link        String?  // URL opcional para redirección
+  fechaInicio DateTime
+  fechaFin    DateTime
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([orden])
+  @@index([activo])
+  @@index([fechaInicio, fechaFin])
+}
+
+enum TipoMedia {
+  IMAGEN
+  VIDEO
+}
+
 enum Role {
   STUDENT
   TEACHER

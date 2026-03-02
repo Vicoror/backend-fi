@@ -11,6 +11,7 @@ import passwordRoutes from './routes/password.routes'
 import aspiranteRoutes from './routes/aspirante.routes';
 import chatRoutes from './routes/chat.routes';  // ✅ Esto está bien importado
 import studentRoutes from './routes/student.routes';
+import carruselRoutes from './routes/carrusel.routes';
 
 const app = express();
 
@@ -63,7 +64,8 @@ app.get('/', (req, res) => {
       cursos: '/cursos',
       checkout: '/checkout',
       webhook: '/webhook (POST only)',
-      chat: '/api/chat (send & health)'
+      chat: '/api/chat (send & health)',
+      carrusel: '/api/carrusel (public) & /api/carrusel/admin (admin)'
     }
   });
 });
@@ -77,7 +79,8 @@ app.get('/health', (_req, res) => {
 });
 
 // 🟢 PRIMERO: Rutas públicas (como chat)
-app.use('/api', chatRoutes);                    // El chat debe ser público
+app.use('/api', chatRoutes);  
+app.use('/api/carrusel', carruselRoutes);                  // El chat debe ser público
 
 // 🟡 SEGUNDO: Rutas semi-públicas
 app.use('/cursos', cursosRoutes);
