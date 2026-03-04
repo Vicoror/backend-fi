@@ -1,9 +1,8 @@
-// copilot.routes.ts
 import { Router, Request, Response } from 'express';
 
 const router = Router();
 
-// Endpoint para información del runtime - ¡CRÍTICO!
+// Endpoint para información del runtime
 router.get('/openai/info', async (req: Request, res: Response) => {
   try {
     res.json({
@@ -22,36 +21,61 @@ router.get('/openai/info', async (req: Request, res: Response) => {
   }
 });
 
-// Endpoint para conversación
+// Endpoint para conversación - VERSIÓN CORREGIDA
 router.post('/openai', async (req: Request, res: Response) => {
   try {
-    const { messages } = req.body;
+    console.log('📨 Body recibido:', JSON.stringify(req.body, null, 2));
     
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: 'Mensajes inválidos' });
+    // CopilotKit envía los mensajes en diferentes formatos
+    let mensajes = [];
+    
+    if (req.body.messages && Array.isArray(req.body.messages)) {
+      // Formato 1: { messages: [...] }
+      mensajes = req.body.messages;
+    } else if (req.body.message) {
+      // Formato 2: { message: "texto" }
+      mensajes = [{ role: 'user', content: req.body.message }];
+    } else if (Array.isArray(req.body)) {
+      // Formato 3: array directo
+      mensajes = req.body;
+    } else {
+      console.log('❌ Formato no reconocido');
+      return res.status(400).json({ 
+        error: 'Formato de mensajes no reconocido',
+        received: req.body 
+      });
     }
 
-    const ultimoMensaje = messages[messages.length - 1]?.content || '';
+    // Obtener el último mensaje del usuario
+    const ultimoMensajeUser = [...mensajes]
+      .reverse()
+      .find(m => m.role === 'user' || m.role === 'human');
     
+    const textoUsuario = ultimoMensajeUser?.content?.toLowerCase() || '';
+    
+    console.log('📝 Texto usuario:', textoUsuario);
+
     // Respuestas basadas en palabras clave
     let respuesta = "No entendí. ¿Puedes repetir?";
     
-    if (ultimoMensaje.toLowerCase().includes('hola')) {
+    if (textoUsuario.includes('hola')) {
       respuesta = "👋 ¡Hola! Soy tu asistente para practicar francés. ¿Sobre qué tema te gustaría conversar?";
     } 
-    else if (ultimoMensaje.toLowerCase().includes('verbo')) {
+    else if (textoUsuario.includes('verbo')) {
       respuesta = "📚 Los verbos en francés son muy importantes. Por ejemplo: 'parler' (hablar), 'manger' (comer), 'dormir' (dormir). ¿Quieres practicar alguno?";
     }
-    else if (ultimoMensaje.toLowerCase().includes('gracias')) {
+    else if (textoUsuario.includes('gracias')) {
       respuesta = "😊 ¡De nada! Sigue practicando. ¿Quieres seguir con otro tema?";
     }
-    else if (ultimoMensaje.toLowerCase().includes('adiós')) {
+    else if (textoUsuario.includes('adiós')) {
       respuesta = "👋 ¡Hasta luego! Vuelve cuando quieras practicar más.";
     }
     
+    // CopilotKit espera este formato exacto
     res.json({
       role: 'assistant',
-      content: respuesta
+      content: respuesta,
+      id: Date.now().toString()
     });
     
   } catch (error) {
