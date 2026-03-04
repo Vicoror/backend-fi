@@ -2,22 +2,25 @@ import { Router, Request, Response } from 'express';
 
 const router = Router();
 
-// Endpoint para información del runtime
+// Endpoint para información del runtime - VERSIÓN SIMPLIFICADA
 router.get('/openai/info', async (req: Request, res: Response) => {
+  // Configurar cabeceras CORS explícitamente para este endpoint
+  res.header('Access-Control-Allow-Origin', 'https://francaisintelligent.vercel.app');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  
+  // Responder con el formato MÍNIMO que CopilotKit necesita
   res.json({
-    actions: [],
-    version: '1.0.0',
     agents: [{
       name: 'default',
-      description: 'Asistente de francés',
-      instructions: 'Eres un asistente amigable para aprender francés.',
-      tools: []
+      description: 'Asistente de francés'
     }]
   });
 });
 
-// Endpoint universal para TODO
+// Endpoint universal para TODO - MANTENER IGUAL
 router.post('/openai', async (req: Request, res: Response) => {
+  // ... (mantén el código que ya tienes para POST, que funciona bien)
   try {
     console.log('📨 POST /openai - Body completo:', JSON.stringify(req.body, null, 2));
 
