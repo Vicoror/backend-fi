@@ -4,74 +4,73 @@ const router = Router();
 
 // Endpoint para información del runtime
 router.get('/openai/info', async (req: Request, res: Response) => {
-  try {
-    res.json({
-      actions: [],
-      version: '1.0.0',
-      agents: [{
-        name: 'default',
-        description: 'Asistente de francés',
-        instructions: 'Eres un asistente amigable para aprender francés.',
-        tools: []
-      }]
-    });
-  } catch (error) {
-    console.error('Error en /info:', error);
-    res.status(500).json({ error: 'Error interno' });
-  }
+  res.json({
+    actions: [],
+    version: '1.0.0',
+    agents: [{
+      name: 'default',
+      description: 'Asistente de francés',
+      instructions: 'Eres un asistente amigable para aprender francés.',
+      tools: []
+    }]
+  });
 });
 
-// Endpoint para conversación - VERSIÓN CORREGIDA
+// Endpoint universal para TODO
 router.post('/openai', async (req: Request, res: Response) => {
   try {
-    console.log('📨 Body recibido:', JSON.stringify(req.body, null, 2));
-    
-    // CopilotKit envía los mensajes en diferentes formatos
-    let mensajes = [];
-    
-    if (req.body.messages && Array.isArray(req.body.messages)) {
-      // Formato 1: { messages: [...] }
-      mensajes = req.body.messages;
-    } else if (req.body.message) {
-      // Formato 2: { message: "texto" }
-      mensajes = [{ role: 'user', content: req.body.message }];
-    } else if (Array.isArray(req.body)) {
-      // Formato 3: array directo
-      mensajes = req.body;
-    } else {
-      console.log('❌ Formato no reconocido');
-      return res.status(400).json({ 
-        error: 'Formato de mensajes no reconocido',
-        received: req.body 
+    console.log('📨 POST /openai - Body completo:', JSON.stringify(req.body, null, 2));
+
+    // CASO 1: Es un mensaje de conexión (agent/connect)
+    if (req.body.method === 'agent/connect') {
+      console.log('🔌 Mensaje de conexión detectado');
+      return res.json({
+        type: 'connection',
+        agentId: req.body.params?.agentId || 'default',
+        status: 'connected'
       });
     }
 
-    // Obtener el último mensaje del usuario
-    const ultimoMensajeUser = [...mensajes]
-      .reverse()
-      .find(m => m.role === 'user' || m.role === 'human');
+    // CASO 2: Extraer mensajes del usuario de cualquier formato
+    let textoUsuario = '';
     
-    const textoUsuario = ultimoMensajeUser?.content?.toLowerCase() || '';
-    
-    console.log('📝 Texto usuario:', textoUsuario);
+    // Buscar en diferentes lugares donde puede venir el mensaje
+    if (req.body.messages && Array.isArray(req.body.messages)) {
+      // Formato estándar: { messages: [...] }
+      const ultimoMensaje = req.body.messages
+        .filter((m: any) => m.role === 'user' || m.role === 'human')
+        .pop();
+      textoUsuario = ultimoMensaje?.content || '';
+    } 
+    else if (req.body.message) {
+      // Formato simple: { message: "texto" }
+      textoUsuario = req.body.message;
+    }
+    else if (req.body.content) {
+      // Formato directo: { content: "texto" }
+      textoUsuario = req.body.content;
+    }
+
+    console.log('📝 Texto extraído:', textoUsuario);
 
     // Respuestas basadas en palabras clave
     let respuesta = "No entendí. ¿Puedes repetir?";
+    const textoLower = textoUsuario.toLowerCase();
     
-    if (textoUsuario.includes('hola')) {
+    if (textoLower.includes('hola')) {
       respuesta = "👋 ¡Hola! Soy tu asistente para practicar francés. ¿Sobre qué tema te gustaría conversar?";
     } 
-    else if (textoUsuario.includes('verbo')) {
+    else if (textoLower.includes('verbo')) {
       respuesta = "📚 Los verbos en francés son muy importantes. Por ejemplo: 'parler' (hablar), 'manger' (comer), 'dormir' (dormir). ¿Quieres practicar alguno?";
     }
-    else if (textoUsuario.includes('gracias')) {
+    else if (textoLower.includes('gracias')) {
       respuesta = "😊 ¡De nada! Sigue practicando. ¿Quieres seguir con otro tema?";
     }
-    else if (textoUsuario.includes('adiós')) {
+    else if (textoLower.includes('adiós')) {
       respuesta = "👋 ¡Hasta luego! Vuelve cuando quieras practicar más.";
     }
     
-    // CopilotKit espera este formato exacto
+    // Formato de respuesta que CopilotKit espera
     res.json({
       role: 'assistant',
       content: respuesta,
@@ -79,7 +78,7 @@ router.post('/openai', async (req: Request, res: Response) => {
     });
     
   } catch (error) {
-    console.error('Error en POST /openai:', error);
+    console.error('❌ Error en POST /openai:', error);
     res.status(500).json({ error: 'Error en el asistente' });
   }
 });
