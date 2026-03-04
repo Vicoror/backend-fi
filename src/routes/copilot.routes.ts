@@ -3,7 +3,17 @@ import { Router, Request, Response } from 'express';
 
 const router = Router();
 
-// Endpoint para CopilotKit - versión SIN OpenAI
+
+// Endpoint para información del runtime (lo necesita CopilotKit)
+router.get('/openai/info', async (req: Request, res: Response) => {
+  res.json({
+    // Información básica que CopilotKit espera
+    actions: [], // No tenemos acciones personalizadas
+    version: '1.0.0'
+  });
+});
+
+// Endpoint para conversación (el que ya tienes)
 router.post('/openai', async (req: Request, res: Response) => {
   try {
     const { messages } = req.body;
@@ -35,5 +45,6 @@ router.post('/openai', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Error en el asistente' });
   }
 });
+
 
 export default router;
