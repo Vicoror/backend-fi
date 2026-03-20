@@ -13,7 +13,7 @@ import aspiranteRoutes from './routes/aspirante.routes';
 import chatRoutes from './routes/chat.routes';  // ✅ Esto está bien importado
 import studentRoutes from './routes/student.routes';
 import carruselRoutes from './routes/carrusel.routes';
-import copilotRoutes from './routes/copilot.routes';
+import emailRoutes from './routes/email.routes'
 // ❌ NO importar cloudinarySignatureRoutes desde ./api/
 
 const app = express();
@@ -106,7 +106,7 @@ app.use('/auth', passwordRoutes);
 app.use('/registro', registroRoutes);
 app.use('/api/aspirantes', aspiranteRoutes);
 app.use('/api/student', studentRoutes);
-app.use('/api/copilotkit', copilotRoutes);
+app.use('/api', emailRoutes)
 
 // =============================================
 // RUTA DE FIRMA DE CLOUDINARY
