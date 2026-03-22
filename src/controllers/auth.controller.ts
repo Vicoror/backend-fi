@@ -49,8 +49,7 @@ if (user.status !== 'ACTIVE') {
     httpOnly: true,
     secure: true, // Siempre true en producción (HTTPS)
     sameSite: 'none', // Permite cross-site en producción
-    domain: '.vercel.app',
-    maxAge: 24 * 60 * 60 * 1000,
+    path: '/',
     //domain: '.vercel.app' // Opcional: permite compartir entre subdominios
   })
 
