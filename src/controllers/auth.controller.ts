@@ -45,10 +45,10 @@ if (user.status !== 'ACTIVE') {
   })
 
  res.cookie('token', token, {
-  httpOnly: true,
-  secure: true,
-  sameSite: 'none',
-  path: '/', // 🔥 AGREGA ESTO
+   httpOnly: true,
+  secure: true,       // ✅ obligatorio en producción (Vercel usa HTTPS)
+  sameSite: 'none',   // ✅ obligatorio para cross-domain (frontend ≠ backend)
+  maxAge: 24 * 60 * 60 * 1000,
 })
 
   res.json({
