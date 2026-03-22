@@ -44,13 +44,11 @@ if (user.status !== 'ACTIVE') {
     email: user.email,
   })
 
- res.json({
-  message: 'Login exitoso',
-  token, // 🔥 enviar token al frontend
-  user: {
-    folio: user.folio,
-    role: user.role,
-  },
+ res.cookie('token', token, {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'none',
+  path: '/', // 🔥 AGREGA ESTO
 })
 
   res.json({
