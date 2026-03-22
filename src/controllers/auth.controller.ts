@@ -44,18 +44,13 @@ if (user.status !== 'ACTIVE') {
     email: user.email,
   })
 
- res.cookie('token', token, {
-   httpOnly: true,
-  secure: true,       // ✅ obligatorio en producción (Vercel usa HTTPS)
-  sameSite: 'none',   // ✅ obligatorio para cross-domain (frontend ≠ backend)
-  maxAge: 24 * 60 * 60 * 1000,
+ res.json({
+  message: 'Login exitoso',
+  token, // 🔥 enviar token al frontend
+  user: {
+    folio: user.folio,
+    role: user.role,
+  },
 })
 
-  res.json({
-    message: 'Login exitoso',
-    user: {
-      folio: user.folio,
-      role: user.role,
-    },
-  })
 }
