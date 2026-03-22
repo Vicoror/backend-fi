@@ -44,14 +44,14 @@ if (user.status !== 'ACTIVE') {
     email: user.email,
   })
 
-  // 🍪 COOKIE CONFIGURADA PARA PRODUCCIÓN
-  res.cookie('token', token, {
-    httpOnly: true,
-    secure: true, // Siempre true en producción (HTTPS)
-    sameSite: 'none', // Permite cross-site en producción
-    path: '/',
-    //domain: '.vercel.app' // Opcional: permite compartir entre subdominios
-  })
+ res.json({
+  message: 'Login exitoso',
+  token, // 🔥 enviar token al frontend
+  user: {
+    folio: user.folio,
+    role: user.role,
+  },
+})
 
   res.json({
     message: 'Login exitoso',
