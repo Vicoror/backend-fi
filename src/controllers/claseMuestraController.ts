@@ -1,25 +1,16 @@
 // backend/src/controllers/claseMuestraController.ts
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import nodemailer from 'nodemailer';
+import { transporter } from '../lib/nodemailer'; // ← Importar desde lib
 
 const prisma = new PrismaClient();
-
-// Configurar transporter de nodemailer (ya deberías tenerlo configurado)
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT),
-  secure: true, // true para 465, false para otros
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
 
 export class ClaseMuestraController {
   static async create(req: Request, res: Response) {
     try {
       const { correo, tipoCurso, nivel, diaPreferido, horario } = req.body;
+
+      console.log('📝 Datos recibidos:', { correo, tipoCurso, nivel, diaPreferido, horario });
 
       // Validaciones existentes...
       if (!correo || !tipoCurso || !nivel || !diaPreferido || !horario) {
@@ -76,11 +67,13 @@ export class ClaseMuestraController {
         }
       });
 
+      console.log('✅ Solicitud guardada, ID:', claseMuestra.id);
+
       // =============================================
-      // ENVIAR CORREO DE NOTIFICACIÓN
+      // ENVIAR CORREOS USANDO EL TRANSPORTER DE LIB
       // =============================================
       
-      // Formatear fecha para mostrar bonito
+      // Formatear fecha
       const fechaFormateada = fechaPreferida.toLocaleDateString('es-ES', {
         weekday: 'long',
         year: 'numeric',
@@ -88,147 +81,124 @@ export class ClaseMuestraController {
         day: 'numeric'
       });
       
-      // Email para TI (notificación)
-      const adminEmail = process.env.EMAIL_USER || 'infofrancaisintelligent@gmail.com'; // Cambia por tu email
+      const adminEmail = process.env.EMAIL_USER || 'infofrancaisintelligent@gmail.com';
       
+      // Email para ADMIN (notificación)
       const adminMailOptions = {
-        from: process.env.SMTP_FROM || '"Français Intelligent" <noreply@francaisintelligent.com>',
+        from: `"Français Intelligent" <${process.env.SMTP_USER}>`,
         to: adminEmail,
         subject: '📚 NUEVA SOLICITUD DE CLASE MUESTRA',
+        text: `
+Nueva solicitud de clase muestra:
+
+Correo del alumno: ${correo}
+Tipo de curso: ${tipoCurso}
+Nivel: ${nivel}
+Día preferido: ${fechaFormateada}
+Horario preferido: ${horario}
+ID de solicitud: ${claseMuestra.id}
+
+Responde a este correo para coordinar la clase muestra.
+        `,
         html: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="UTF-8">
-            <style>
-              body { font-family: 'Arial', sans-serif; line-height: 1.6; color: #333; }
-              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-              .header { background: #150354; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
-              .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-              .info-box { background: white; padding: 15px; margin: 15px 0; border-left: 4px solid #150354; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-              .label { font-weight: bold; color: #150354; }
-              .button { background: #150354; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 20px; }
-              .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #666; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="header">
-                <h1>🎓 Nueva Solicitud</h1>
-                <p>Clase Muestra - Français Intelligent</p>
-              </div>
-              <div class="content">
-                <h2>¡Alguien quiere una clase muestra!</h2>
-                <p>Se ha recibido una nueva solicitud de clase muestra. Aquí están los detalles:</p>
-                
-                <div class="info-box">
-                  <p><span class="label">📧 Correo del alumno:</span> ${correo}</p>
-                  <p><span class="label">📚 Tipo de curso:</span> ${tipoCurso}</p>
-                  <p><span class="label">🎯 Nivel:</span> ${nivel}</p>
-                  <p><span class="label">📅 Día preferido:</span> ${fechaFormateada}</p>
-                  <p><span class="label">⏰ Horario preferido:</span> ${horario}</p>
-                  <p><span class="label">🆔 ID de solicitud:</span> ${claseMuestra.id}</p>
-                </div>
-                
-                <p><strong>Próximos pasos:</strong></p>
-                <ol>
-                  <li>Contactar al alumno para confirmar disponibilidad</li>
-                  <li>Coordinar el horario exacto</li>
-                  <li>Enviar el enlace de la clase muestra</li>
-                </ol>
-                
-                <a href="mailto:${correo}" class="button">📧 Responder al alumno</a>
-              </div>
-              <div class="footer">
-                <p>Français Intelligent - Escuela de Francés</p>
-                <p>Este es un correo automático de notificación</p>
-              </div>
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #150354;">🎓 Nueva Solicitud de Clase Muestra</h2>
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px 0;">
+              <p><strong>📧 Correo del alumno:</strong> ${correo}</p>
+              <p><strong>📚 Tipo de curso:</strong> ${tipoCurso}</p>
+              <p><strong>🎯 Nivel:</strong> ${nivel}</p>
+              <p><strong>📅 Día preferido:</strong> ${fechaFormateada}</p>
+              <p><strong>⏰ Horario preferido:</strong> ${horario}</p>
+              <p><strong>🆔 ID:</strong> ${claseMuestra.id}</p>
             </div>
-          </body>
-          </html>
+            <p>Responde a este correo para coordinar la clase muestra.</p>
+            <hr>
+            <p style="font-size: 12px; color: #666;">Français Intelligent - Escuela de Francés</p>
+          </div>
         `
       };
       
-      // Email de confirmación para el alumno (opcional pero recomendado)
+      // Email para ALUMNO (confirmación)
       const studentMailOptions = {
-        from: process.env.SMTP_FROM || '"Français Intelligent" <noreply@francaisintelligent.com>',
+        from: `"Français Intelligent" <${process.env.SMTP_USER}>`,
         to: correo,
         subject: '🎓 ¡Hemos recibido tu solicitud de clase muestra!',
+        text: `
+¡Hola!
+
+Hemos recibido tu solicitud de clase muestra. Estos son los datos que nos enviaste:
+
+Tipo de curso: ${tipoCurso}
+Nivel: ${nivel}
+Día preferido: ${fechaFormateada}
+Horario preferido: ${horario}
+
+En las próximas 24 horas, uno de nuestros asesores se pondrá en contacto contigo para confirmar la disponibilidad y enviarte el enlace de la clase muestra.
+
+¡Saludos y bienvenido a Français Intelligent! 🇫🇷
+        `,
         html: `
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="UTF-8">
-            <style>
-              body { font-family: 'Arial', sans-serif; line-height: 1.6; color: #333; }
-              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-              .header { background: #150354; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
-              .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-              .info-box { background: white; padding: 15px; margin: 15px 0; border-left: 4px solid #A8DADC; }
-              .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #666; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="header">
-                <h1>🎓 ¡Gracias por tu interés!</h1>
-                <p>Clase Muestra - Français Intelligent</p>
-              </div>
-              <div class="content">
-                <h2>¡Hola!</h2>
-                <p>Hemos recibido tu solicitud de clase muestra. Estos son los datos que nos enviaste:</p>
-                
-                <div class="info-box">
-                  <p><strong>📚 Tipo de curso:</strong> ${tipoCurso}</p>
-                  <p><strong>🎯 Nivel:</strong> ${nivel}</p>
-                  <p><strong>📅 Día preferido:</strong> ${fechaFormateada}</p>
-                  <p><strong>⏰ Horario preferido:</strong> ${horario}</p>
-                </div>
-                
-                <p><strong>📧 ¿Qué sigue?</strong></p>
-                <p>En las próximas 24 horas, uno de nuestros asesores se pondrá en contacto contigo para confirmar la disponibilidad y enviarte el enlace de la clase muestra.</p>
-                
-                <p>Si tienes alguna pregunta, no dudes en contactarnos respondiendo a este correo.</p>
-                
-                <p>¡Saludos y bienvenido a Français Intelligent! 🇫🇷</p>
-              </div>
-              <div class="footer">
-                <p>Français Intelligent - Escuela de Francés</p>
-                <p>Este es un correo automático, por favor no responder directamente a este mensaje</p>
-              </div>
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #150354;">🎓 ¡Gracias por tu interés!</h2>
+            <p>Hemos recibido tu solicitud de clase muestra. Estos son los datos que nos enviaste:</p>
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px 0;">
+              <p><strong>📚 Tipo de curso:</strong> ${tipoCurso}</p>
+              <p><strong>🎯 Nivel:</strong> ${nivel}</p>
+              <p><strong>📅 Día preferido:</strong> ${fechaFormateada}</p>
+              <p><strong>⏰ Horario preferido:</strong> ${horario}</p>
             </div>
-          </body>
-          </html>
+            <p>📧 En las próximas 24 horas, uno de nuestros asesores se pondrá en contacto contigo para confirmar la disponibilidad y enviarte el enlace de la clase muestra.</p>
+            <p>Si tienes alguna pregunta, no dudes en contactarnos respondiendo a este correo.</p>
+            <p>¡Saludos y bienvenido a Français Intelligent! 🇫🇷</p>
+            <hr>
+            <p style="font-size: 12px; color: #666;">Français Intelligent - Escuela de Francés</p>
+          </div>
         `
       };
       
       // Enviar correos
+      let adminEmailSent = false;
+      let studentEmailSent = false;
+      
       try {
+        console.log('📧 Enviando correo al admin...');
         await transporter.sendMail(adminMailOptions);
-        console.log('✅ Correo de notificación enviado al admin');
-        
+        console.log('✅ Correo admin enviado');
+        adminEmailSent = true;
+      } catch (adminError) {
+        console.error('❌ Error enviando correo admin:', adminError);
+      }
+      
+      try {
+        console.log('📧 Enviando correo al alumno...');
         await transporter.sendMail(studentMailOptions);
-        console.log('✅ Correo de confirmación enviado al alumno');
-      } catch (emailError) {
-        console.error('❌ Error al enviar correos:', emailError);
-        // No lanzamos error para que la solicitud se guarde igual
+        console.log('✅ Correo alumno enviado');
+        studentEmailSent = true;
+      } catch (studentError) {
+        console.error('❌ Error enviando correo alumno:', studentError);
       }
 
       res.status(201).json({
         message: 'Solicitud de clase muestra registrada exitosamente',
-        data: claseMuestra
+        data: claseMuestra,
+        emailsSent: {
+          admin: adminEmailSent,
+          student: studentEmailSent
+        }
       });
 
     } catch (error: any) {
+      console.error('❌ Error general:', error);
+      
       if (error.code === 'P2002') {
         return res.status(400).json({
           error: 'Este correo ya tiene una solicitud activa'
         });
       }
 
-      console.error('Error al crear clase muestra:', error);
       res.status(500).json({
-        error: 'Error interno del servidor'
+        error: 'Error interno del servidor',
+        details: error.message
       });
     }
   }
