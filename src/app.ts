@@ -14,6 +14,7 @@ import chatRoutes from './routes/chat.routes';  // ✅ Esto está bien importado
 import studentRoutes from './routes/student.routes';
 import carruselRoutes from './routes/carrusel.routes';
 import emailRoutes from './routes/email.routes'
+import claseMuestraRoutes from './routes/claseMuestraRoutes';
 // ❌ NO importar cloudinarySignatureRoutes desde ./api/
 
 const app = express();
@@ -92,6 +93,8 @@ app.get('/health', (_req, res) => {
 // 🟢 PRIMERO: Rutas públicas (como chat)
 app.use('/api', chatRoutes);  
 app.use('/api/carrusel', carruselRoutes);
+app.use('/api/clase-muestra', claseMuestraRoutes);
+
 
 // 🟡 SEGUNDO: Rutas semi-públicas
 app.use('/cursos', cursosRoutes);

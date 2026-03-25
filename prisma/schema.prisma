@@ -138,6 +138,19 @@ model CarruselItem {
   @@index([fechaInicio, fechaFin])
 }
 
+model ClaseMuestra {
+  id            String   @id @default(cuid())
+  correo        String   @unique
+  tipoCurso     String   // 'Individuales' | 'Grupales'
+  nivel         String   // 'A1', 'A1+', 'A2', 'A2+', 'B1', 'B1+', 'B2'
+  diaPreferido  DateTime // Fecha preferida para la clase muestra
+  horario       String   // '07:00', '08:00', etc.
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("clase_muestra")
+}
+
 enum TipoMedia {
   IMAGEN
   VIDEO
