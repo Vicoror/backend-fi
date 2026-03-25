@@ -93,7 +93,7 @@ app.get('/health', (_req, res) => {
 // 🟢 PRIMERO: Rutas públicas (como chat)
 app.use('/api', chatRoutes);  
 app.use('/api/carrusel', carruselRoutes);
-app.use('/api/clase-muestra', claseMuestraRoutes);
+app.use('/clase-muestra', claseMuestraRoutes);
 
 
 // 🟡 SEGUNDO: Rutas semi-públicas
