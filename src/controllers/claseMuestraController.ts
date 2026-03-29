@@ -135,7 +135,7 @@ Horario preferido: ${horario}
 
 En las próximas 24 horas, uno de nuestros asesores se pondrá en contacto contigo para confirmar la disponibilidad y enviarte el enlace de la clase muestra.
 
-¡Saludos y bienvenido a Français Intelligent! 🇫🇷
+¡Saludos y bienvenid@ a Français Intelligent! 🇫🇷
         `,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">

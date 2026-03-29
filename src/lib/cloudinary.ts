@@ -1,4 +1,4 @@
-// lib/cloudinary.ts
+// backend/src/utils/cloudinary.ts
 import { v2 as cloudinary } from 'cloudinary';
 
 cloudinary.config({
@@ -6,5 +6,47 @@ cloudinary.config({
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
+interface UploadOptions {
+  folder?: string;
+  resource_type?: 'auto' | 'image' | 'video' | 'raw';
+}
+
+export const uploadToCloudinary = async (
+  buffer: Buffer,
+  options: UploadOptions = {}
+): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: options.folder || 'uploads',
+        resource_type: options.resource_type || 'auto',
+        allowed_formats: ['pdf', 'ppt', 'pptx', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg', 'png']
+      },
+      (error, result) => {
+        if (error) {
+          console.error('Cloudinary upload error:', error);
+          reject(error);
+        } else {
+          resolve(result);
+        }
+      }
+    );
+    
+    uploadStream.end(buffer);
+  });
+};
+
+export const deleteFromCloudinary = async (publicId: string): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader.destroy(publicId, (error, result) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(result);
+      }
+    });
+  });
+};
 
 export default cloudinary;

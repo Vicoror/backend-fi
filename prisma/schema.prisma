@@ -151,6 +151,43 @@ model ClaseMuestra {
   @@map("clase_muestra")
 }
 
+model Temario {
+  id            String   @id @default(cuid())
+  nivel         String  @unique 
+  tituloGeneral String
+
+  temas         Tema[]
+}
+
+model Tema {
+  id        String   @id @default(cuid())
+  temarioId String
+
+  titulo    String   // Ej: Les adjectifs
+  material  String?  // PDF o link principal
+  orden     Int
+
+  temario   Temario  @relation(fields: [temarioId], references: [id])
+  subtemas  Subtema[]
+}
+
+model Subtema {
+  id       String   @id @default(cuid())
+  temaId   String
+
+  tipo     TipoSubtema
+  titulo   String
+  material String
+  orden    Int
+
+  tema     Tema     @relation(fields: [temaId], references: [id])
+}
+
+enum TipoSubtema {
+  EJERCICIO
+  VOCABULARIO
+}
+
 enum TipoMedia {
   IMAGEN
   VIDEO
