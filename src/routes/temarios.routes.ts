@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { uploadToCloudinary } from '../lib/cloudinary';
 import multer from 'multer';
+import { v2 as cloudinary } from 'cloudinary';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -23,7 +24,11 @@ router.get('/temarios', async (req, res) => {
       include: {
         temas: {
           include: {
-            subtemas: true
+            subtemas: {
+              orderBy: {
+                orden: 'asc'
+              }
+            }
           },
           orderBy: {
             orden: 'asc'
@@ -41,7 +46,7 @@ router.get('/temarios', async (req, res) => {
   }
 });
 
-// Obtener temario por nivel - CORREGIDO: usar findFirst en lugar de findUnique
+// Obtener temario por nivel
 router.get('/temarios/nivel/:nivel', async (req, res) => {
   try {
     const { nivel } = req.params;
@@ -50,7 +55,11 @@ router.get('/temarios/nivel/:nivel', async (req, res) => {
       include: {
         temas: {
           include: {
-            subtemas: true
+            subtemas: {
+              orderBy: {
+                orden: 'asc'
+              }
+            }
           },
           orderBy: {
             orden: 'asc'
@@ -70,10 +79,56 @@ router.get('/temarios/nivel/:nivel', async (req, res) => {
   }
 });
 
+// Obtener temario por ID
+router.get('/temarios/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const temario = await prisma.temario.findUnique({
+      where: { id },
+      include: {
+        temas: {
+          include: {
+            subtemas: {
+              orderBy: {
+                orden: 'asc'
+              }
+            }
+          },
+          orderBy: {
+            orden: 'asc'
+          }
+        }
+      }
+    });
+    
+    if (!temario) {
+      return res.status(404).json({ error: 'Temario no encontrado' });
+    }
+    
+    res.json(temario);
+  } catch (error) {
+    console.error('Error al obtener temario:', error);
+    res.status(500).json({ error: 'Error al obtener temario' });
+  }
+});
+
 // Crear nuevo temario
 router.post('/temarios', async (req, res) => {
   try {
     const { nivel, tituloGeneral, temas } = req.body;
+    
+    // Validaciones
+    if (!nivel) {
+      return res.status(400).json({ error: 'El nivel es requerido' });
+    }
+    
+    if (!tituloGeneral) {
+      return res.status(400).json({ error: 'El título general es requerido' });
+    }
+    
+    if (!temas || !Array.isArray(temas)) {
+      return res.status(400).json({ error: 'Los temas deben ser un array' });
+    }
     
     // Verificar si ya existe un temario para este nivel
     const existingTemario = await prisma.temario.findFirst({
@@ -84,50 +139,94 @@ router.post('/temarios', async (req, res) => {
       return res.status(400).json({ error: 'Ya existe un temario para este nivel' });
     }
     
+    // Preparar datos para creación
+    const temasData = temas.map((tema: any, index: number) => {
+      // Validar que cada tema tenga título
+      if (!tema.titulo) {
+        throw new Error(`El tema ${index + 1} no tiene título`);
+      }
+      
+      return {
+        titulo: tema.titulo,
+        material: tema.material || null,
+        orden: index,
+        subtemas: {
+          create: tema.subtemas && Array.isArray(tema.subtemas) 
+            ? tema.subtemas.map((subtema: any, subIndex: number) => ({
+                tipo: subtema.tipo || 'EJERCICIO',
+                titulo: subtema.titulo || 'Sin título',
+                material: subtema.material || '',
+                orden: subIndex
+              }))
+            : []
+        }
+      };
+    });
+    
     const temario = await prisma.temario.create({
       data: {
         nivel,
         tituloGeneral,
         temas: {
-          create: temas.map((tema: any, index: number) => ({
-            titulo: tema.titulo,
-            material: tema.material,
-            orden: index,
-            subtemas: {
-              create: tema.subtemas?.map((subtema: any, subIndex: number) => ({
-                tipo: subtema.tipo,
-                titulo: subtema.titulo,
-                material: subtema.material,
-                orden: subIndex
-              }))
-            }
-          }))
+          create: temasData
         }
       },
       include: {
         temas: {
           include: {
-            subtemas: true
+            subtemas: {
+              orderBy: {
+                orden: 'asc'
+              }
+            }
+          },
+          orderBy: {
+            orden: 'asc'
           }
         }
       }
     });
     
-    res.json(temario);
+    res.status(201).json(temario);
   } catch (error) {
-    console.error('Error al crear temario:', error);
-    res.status(500).json({ error: 'Error al crear temario' });
+    console.error('Error detallado al crear temario:', error);
+    res.status(500).json({ 
+      error: 'Error al crear temario',
+      details: error instanceof Error ? error.message : String(error)
+    });
   }
 });
 
-// Actualizar temario
+// Actualizar temario completo
 router.put('/temarios/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { nivel, tituloGeneral, temas } = req.body;
     
+    // Validaciones
+    if (!nivel) {
+      return res.status(400).json({ error: 'El nivel es requerido' });
+    }
+    
+    if (!tituloGeneral) {
+      return res.status(400).json({ error: 'El título general es requerido' });
+    }
+    
+    if (!temas || !Array.isArray(temas)) {
+      return res.status(400).json({ error: 'Los temas deben ser un array' });
+    }
+    
+    // Verificar si el temario existe
+    const temarioExists = await prisma.temario.findUnique({
+      where: { id }
+    });
+    
+    if (!temarioExists) {
+      return res.status(404).json({ error: 'Temario no encontrado' });
+    }
+    
     // Verificar si el nivel ya existe en otro temario
-    if (nivel) {
+    if (nivel !== temarioExists.nivel) {
       const existingTemario = await prisma.temario.findFirst({
         where: { 
           nivel,
@@ -140,9 +239,33 @@ router.put('/temarios/:id', async (req, res) => {
       }
     }
     
-    // Eliminar temas existentes
+    // Eliminar temas existentes y sus subtemas (cascada)
     await prisma.tema.deleteMany({
       where: { temarioId: id }
+    });
+    
+    // Preparar nuevos temas
+    const temasData = temas.map((tema: any, index: number) => {
+      // Validar que cada tema tenga título
+      if (!tema.titulo) {
+        throw new Error(`El tema ${index + 1} no tiene título`);
+      }
+      
+      return {
+        titulo: tema.titulo,
+        material: tema.material || null,
+        orden: index,
+        subtemas: {
+          create: tema.subtemas && Array.isArray(tema.subtemas)
+            ? tema.subtemas.map((subtema: any, subIndex: number) => ({
+                tipo: subtema.tipo || 'EJERCICIO',
+                titulo: subtema.titulo || 'Sin título',
+                material: subtema.material || '',
+                orden: subIndex
+              }))
+            : []
+        }
+      };
     });
     
     // Actualizar temario con nuevos temas
@@ -152,21 +275,49 @@ router.put('/temarios/:id', async (req, res) => {
         nivel,
         tituloGeneral,
         temas: {
-          create: temas.map((tema: any, index: number) => ({
-            titulo: tema.titulo,
-            material: tema.material,
-            orden: index,
-            subtemas: {
-              create: tema.subtemas?.map((subtema: any, subIndex: number) => ({
-                tipo: subtema.tipo,
-                titulo: subtema.titulo,
-                material: subtema.material,
-                orden: subIndex
-              }))
-            }
-          }))
+          create: temasData
         }
       },
+      include: {
+        temas: {
+          include: {
+            subtemas: {
+              orderBy: {
+                orden: 'asc'
+              }
+            }
+          },
+          orderBy: {
+            orden: 'asc'
+          }
+        }
+      }
+    });
+    
+    res.json(temario);
+  } catch (error) {
+    console.error('Error detallado al actualizar temario:', error);
+    res.status(500).json({ 
+      error: 'Error al actualizar temario',
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// Actualizar parcialmente un temario (PATCH)
+router.patch('/temarios/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nivel, tituloGeneral } = req.body;
+    
+    const updateData: any = {};
+    
+    if (nivel) updateData.nivel = nivel;
+    if (tituloGeneral) updateData.tituloGeneral = tituloGeneral;
+    
+    const temario = await prisma.temario.update({
+      where: { id },
+      data: updateData,
       include: {
         temas: {
           include: {
@@ -178,7 +329,7 @@ router.put('/temarios/:id', async (req, res) => {
     
     res.json(temario);
   } catch (error) {
-    console.error('Error al actualizar temario:', error);
+    console.error('Error al actualizar parcialmente temario:', error);
     res.status(500).json({ error: 'Error al actualizar temario' });
   }
 });
@@ -188,7 +339,16 @@ router.delete('/temarios/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Primero eliminar subtemas y temas (cascada automática por Prisma si configuraste onDelete: Cascade)
+    // Verificar si el temario existe
+    const temario = await prisma.temario.findUnique({
+      where: { id }
+    });
+    
+    if (!temario) {
+      return res.status(404).json({ error: 'Temario no encontrado' });
+    }
+    
+    // Eliminar temario (los temas y subtemas se eliminarán en cascada si configuraste onDelete: Cascade)
     await prisma.temario.delete({
       where: { id }
     });
@@ -200,7 +360,7 @@ router.delete('/temarios/:id', async (req, res) => {
   }
 });
 
-// Subir archivo a Cloudinary - CORREGIDO: tipado correcto para multer
+// Subir archivo a Cloudinary
 router.post('/temarios/upload', upload.single('file'), async (req: any, res: any) => {
   try {
     if (!req.file) {
@@ -232,10 +392,63 @@ router.post('/temarios/upload', upload.single('file'), async (req: any, res: any
       resource_type: 'auto'
     });
     
-    res.json({ url: result.secure_url });
+    res.json({ 
+      url: result.secure_url,
+      publicId: result.public_id,
+      format: result.format,
+      size: result.bytes
+    });
   } catch (error) {
     console.error('Error al subir archivo:', error);
     res.status(500).json({ error: 'Error al subir archivo' });
+  }
+});
+
+// Eliminar archivo de Cloudinary
+router.delete('/temarios/delete-file/:publicId', async (req, res) => {
+  try {
+    const { publicId } = req.params;
+    
+    if (!publicId) {
+      return res.status(400).json({ error: 'Public ID es requerido' });
+    }
+    
+    const result = await cloudinary.uploader.destroy(publicId);
+    
+    if (result.result === 'ok') {
+      res.json({ message: 'Archivo eliminado correctamente' });
+    } else {
+      res.status(400).json({ error: 'Error al eliminar archivo' });
+    }
+  } catch (error) {
+    console.error('Error al eliminar archivo:', error);
+    res.status(500).json({ error: 'Error al eliminar archivo' });
+  }
+});
+
+// Obtener estadísticas de temarios
+router.get('/temarios/stats/summary', async (req, res) => {
+  try {
+    const totalTemarios = await prisma.temario.count();
+    const totalTemas = await prisma.tema.count();
+    const totalSubtemas = await prisma.subtema.count();
+    
+    const temariosPorNivel = await prisma.temario.groupBy({
+      by: ['nivel'],
+      _count: {
+        id: true
+      }
+    });
+    
+    res.json({
+      totalTemarios,
+      totalTemas,
+      totalSubtemas,
+      temariosPorNivel
+    });
+  } catch (error) {
+    console.error('Error al obtener estadísticas:', error);
+    res.status(500).json({ error: 'Error al obtener estadísticas' });
   }
 });
 
