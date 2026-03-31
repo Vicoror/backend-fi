@@ -18,6 +18,7 @@ import claseMuestraRoutes from './routes/claseMuestraRoutes';
 import temariosRoutes from './routes/temarios.routes';
 import tareasRoutes from './routes/tareas';
 import examenesRoutes from './routes/examenes';
+import alumnoRoutes from './routes/alumno';
 // ❌ NO importar cloudinarySignatureRoutes desde ./api/
 
 const app = express();
@@ -110,6 +111,7 @@ app.use('/auth', passwordRoutes);
 app.use('/api', temariosRoutes);
 app.use('/api/tareas', tareasRoutes);
 app.use('/api/examenes', examenesRoutes);
+app.use('/api/alumno', alumnoRoutes);
 
 // 🟣 CUARTO: Rutas específicas
 app.use('/registro', registroRoutes);
