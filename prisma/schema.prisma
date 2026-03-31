@@ -20,8 +20,8 @@ model User {
   payments      Payment[]
   profile       Profile?
   purchases     Purchase[]
-  tareas            Tareas[]
-  examenes          Examenes[]
+  entregasTarea   EntregaTarea[]        // Cambiado de tareas a entregasTarea
+  calificacionesExamen CalificacionExamen[]  // Cambiado de examenes a calificacionesExamen
   estadisticasTareas EstadisticasTareas[]
 }
 
@@ -57,8 +57,8 @@ model Course {
   teacher          User?        @relation("TeacherCourses", fields: [teacherId], references: [id])
   enrollments      Enrollment[]
   purchases        Purchase[]
-  tareas            Tareas[]
-  examenes          Examenes[]
+   tareas           Tarea[]              // Relación con tareas
+  examenes         Examen[]             // Relación con exámenes
 }
 
 model Enrollment {
@@ -188,47 +188,91 @@ model Subtema {
   tema     Tema     @relation(fields: [temaId], references: [id], onDelete: Cascade)
 }
 
-model Tareas {
-  id            String   @id @default(uuid())
-  userId        String
-  nivel         String
+// Tareas por nivel (no por usuario)
+model Tarea {
+  id            String      @id @default(uuid())
+  nivel         String      // Nivel al que pertenece (A1, A2, B1, etc.)
   tipo          TipoTarea
-  tarea         String   // URL o ruta del archivo
+  titulo        String      // Título descriptivo
+  descripcion   String?     // Descripción opcional
+  tarea         String      // URL o ruta del archivo
   fechaLimite   DateTime
-  activo        Boolean  @default(true)
-  realizada     Boolean  @default(false)  // Casilla para marcar tarea realizada
+  activo        Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  
+  // Relaciones
+  entregas      EntregaTarea[]
+  course        Course?     @relation(fields: [courseId], references: [id])
+  courseId      String?
+  
+  @@index([nivel])
+  @@index([activo])
+}
+
+// Registro de tareas realizadas por cada alumno
+model EntregaTarea {
+  id            String   @id @default(uuid())
+  tareaId       String
+  userId        String
+  realizada     Boolean  @default(false)
+  fechaEntrega  DateTime?
+  calificacion  Float?   // Calificación opcional de la tarea
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   
   // Relaciones
+  tarea         Tarea    @relation(fields: [tareaId], references: [id])
   user          User     @relation(fields: [userId], references: [id])
-  course        Course?  @relation(fields: [courseId], references: [id])
-  courseId      String?
   
+  @@unique([tareaId, userId])  // Un alumno solo puede entregar una vez cada tarea
+  @@index([tareaId])
   @@index([userId])
-  @@index([courseId])
-  @@index([nivel])
+  @@index([realizada])
 }
 
-model Examenes {
-  id                 String   @id @default(uuid())
-  userId             String
-  nivel              String
-  examen             String   // URL o ruta del archivo
-  calificacionExamen Float?   // Calificación individual del examen
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+// Exámenes por nivel (no por usuario)
+model Examen {
+  id            String      @id @default(uuid())
+  nivel         String
+  titulo        String
+  descripcion   String?
+  examen        String      // URL o ruta del archivo
+  fechaLimite   DateTime?
+  activo        Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
   
   // Relaciones
-  user               User     @relation(fields: [userId], references: [id])
-  course             Course?  @relation(fields: [courseId], references: [id])
-  courseId           String?
+  calificaciones CalificacionExamen[]
+  course        Course?     @relation(fields: [courseId], references: [id])
+  courseId      String?
   
-  @@index([userId])
-  @@index([courseId])
   @@index([nivel])
+  @@index([activo])
 }
 
+// Calificaciones por alumno para cada examen
+model CalificacionExamen {
+  id            String   @id @default(uuid())
+  examenId      String
+  userId        String
+  calificacion  Float?
+  entregado     Boolean  @default(false)
+  fechaEntrega  DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relaciones
+  examen        Examen   @relation(fields: [examenId], references: [id])
+  user          User     @relation(fields: [userId], references: [id])
+  
+  @@unique([examenId, userId])  // Un alumno solo puede tener una calificación por examen
+  @@index([examenId])
+  @@index([userId])
+}
+
+// Estadísticas de tareas por alumno y nivel
 model EstadisticasTareas {
   id                    String   @id @default(uuid())
   userId                String
@@ -237,7 +281,6 @@ model EstadisticasTareas {
   tareasRealizadas      Int      @default(0)
   ultimaActualizacion   DateTime @default(now())
   
-  // Relaciones
   user                  User     @relation(fields: [userId], references: [id])
   
   @@unique([userId, nivel])

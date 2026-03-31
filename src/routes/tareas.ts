@@ -1,3 +1,4 @@
+// backend/src/routes/tareas.ts
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { upload, uploadToCloudinary } from '../middlewares/upload';
@@ -6,34 +7,25 @@ import cloudinary from '../lib/cloudinary';
 const router = Router();
 const prisma = new PrismaClient();
 
-async function actualizarEstadisticas(userId: string, nivel: string) {
-  const totalTareas = await prisma.tareas.count({
-    where: { userId, nivel, activo: true }
-  });
-  
-  const tareasRealizadas = await prisma.tareas.count({
-    where: { userId, nivel, realizada: true, activo: true }
-  });
-  
-  await prisma.estadisticasTareas.upsert({
-    where: { userId_nivel: { userId, nivel } },
-    update: { totalTareas, tareasRealizadas, ultimaActualizacion: new Date() },
-    create: { userId, nivel, totalTareas, tareasRealizadas }
-  });
-}
-
-// Obtener todas las tareas (Admin)
+// Obtener todas las tareas (Admin) - agrupadas por nivel
 router.get('/', async (req, res) => {
   try {
-    const { nivel, courseId, userId } = req.query;
+    const { nivel, activo } = req.query;
     const where: any = {};
     if (nivel) where.nivel = nivel;
-    if (courseId) where.courseId = courseId;
-    if (userId) where.userId = userId;
+    if (activo !== undefined) where.activo = activo === 'true';
     
-    const tareas = await prisma.tareas.findMany({
+    const tareas = await prisma.tarea.findMany({
       where,
-      include: { user: { include: { profile: true } } },
+      include: {
+        entregas: {
+          include: {
+            user: {
+              include: { profile: true }
+            }
+          }
+        }
+      },
       orderBy: { fechaLimite: 'asc' }
     });
     res.json(tareas);
@@ -42,56 +34,96 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Obtener tareas por alumno
+// Obtener tareas para un alumno específico (incluye si ya las realizó)
 router.get('/alumno/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     const { nivel } = req.query;
-    const where: any = { userId };
-    if (nivel) where.nivel = nivel;
     
-    const tareas = await prisma.tareas.findMany({
-      where,
-      include: { course: { select: { nivel: true, code: true } } },
+    // Obtener todas las tareas del nivel del alumno
+    const tareas = await prisma.tarea.findMany({
+      where: {
+        nivel: nivel as string,
+        activo: true
+      },
+      include: {
+        entregas: {
+          where: { userId },
+          select: {
+            id: true,
+            realizada: true,
+            calificacion: true,
+            fechaEntrega: true
+          }
+        }
+      },
       orderBy: { fechaLimite: 'asc' }
     });
-    res.json(tareas);
+    
+    // Formatear respuesta con información de entrega
+    const tareasConEstado = tareas.map(tarea => ({
+      ...tarea,
+      realizada: tarea.entregas[0]?.realizada || false,
+      entregaId: tarea.entregas[0]?.id,
+      calificacion: tarea.entregas[0]?.calificacion
+    }));
+    
+    res.json(tareasConEstado);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener tareas del alumno' });
   }
 });
 
-// Crear tarea (Admin)
+// Crear tarea por nivel (Admin)
 router.post('/', upload.single('archivo'), async (req, res) => {
   try {
-    const { userId, nivel, tipo, fechaLimite, courseId, linkExterno } = req.body;
+    const { nivel, tipo, titulo, descripcion, fechaLimite, courseId, linkExterno } = req.body;
     
     let tareaUrl = '';
-    
     if (req.file) {
-      // Subir a Cloudinary manualmente
       const result = await uploadToCloudinary(req.file.buffer, 'tareas');
-      tareaUrl = (result as any).secure_url;
+      tareaUrl = result;
     } else if (linkExterno) {
       tareaUrl = linkExterno;
     } else {
       return res.status(400).json({ error: 'Debes subir un archivo o proporcionar un link' });
     }
     
-    const nuevaTarea = await prisma.tareas.create({
+    const nuevaTarea = await prisma.tarea.create({
       data: {
-        userId,
         nivel,
         tipo,
+        titulo,
+        descripcion,
         tarea: tareaUrl,
         fechaLimite: new Date(fechaLimite),
         activo: true,
-        realizada: false,
         courseId
       }
     });
     
-    await actualizarEstadisticas(userId, nivel);
+    // Crear entregas para todos los alumnos de ese nivel
+    const alumnosDelNivel = await prisma.user.findMany({
+      where: {
+        enrollments: {
+          some: {
+            course: {
+              nivel: nivel
+            }
+          }
+        }
+      }
+    });
+    
+    // Crear registros de entrega para cada alumno
+    await prisma.entregaTarea.createMany({
+      data: alumnosDelNivel.map(alumno => ({
+        tareaId: nuevaTarea.id,
+        userId: alumno.id,
+        realizada: false
+      }))
+    });
+    
     res.status(201).json(nuevaTarea);
   } catch (error) {
     console.error(error);
@@ -99,76 +131,37 @@ router.post('/', upload.single('archivo'), async (req, res) => {
   }
 });
 
-// Actualizar tarea (Admin)
-router.put('/:id', upload.single('archivo'), async (req, res) => {
+// Marcar tarea como realizada (Alumno)
+router.patch('/entregar/:tareaId', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { tipo, fechaLimite, activo, courseId, linkExterno, eliminarArchivo } = req.body;
+    const { tareaId } = req.params;
+    const { userId, realizada } = req.body;
     
-    const tareaExistente = await prisma.tareas.findUnique({ where: { id } });
-    if (!tareaExistente) return res.status(404).json({ error: 'Tarea no encontrada' });
-    
-    let tareaUrl = tareaExistente.tarea;
-    
-    if (eliminarArchivo === 'true' && tareaExistente.tarea.includes('cloudinary')) {
-      const publicId = tareaExistente.tarea.split('/').slice(-2).join('/').split('.')[0];
-      await cloudinary.uploader.destroy(publicId);
-      tareaUrl = '';
-    }
-    
-    if (req.file) {
-      if (tareaExistente.tarea.includes('cloudinary')) {
-        const publicId = tareaExistente.tarea.split('/').slice(-2).join('/').split('.')[0];
-        await cloudinary.uploader.destroy(publicId);
-      }
-      tareaUrl = req.file.path;
-    } else if (linkExterno) {
-      tareaUrl = linkExterno;
-    }
-    
-    const tareaActualizada = await prisma.tareas.update({
-      where: { id },
+    const entrega = await prisma.entregaTarea.update({
+      where: {
+        tareaId_userId: {
+          tareaId,
+          userId
+        }
+      },
       data: {
-        tipo: tipo || tareaExistente.tipo,
-        tarea: tareaUrl,
-        fechaLimite: fechaLimite ? new Date(fechaLimite) : tareaExistente.fechaLimite,
-        activo: activo !== undefined ? activo === 'true' : tareaExistente.activo,
-        courseId: courseId || tareaExistente.courseId
+        realizada,
+        fechaEntrega: realizada ? new Date() : null
       }
     });
     
-    await actualizarEstadisticas(tareaActualizada.userId, tareaActualizada.nivel);
-    res.json(tareaActualizada);
-  } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar tarea' });
-  }
-});
-
-// Marcar/Desmarcar tarea realizada (Alumno)
-router.patch('/:id/realizada', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { realizada, userId, nivel } = req.body;
-    
-    const tarea = await prisma.tareas.findUnique({ where: { id } });
-    if (!tarea) return res.status(404).json({ error: 'Tarea no encontrada' });
-    
-    const fechaLimite = new Date(tarea.fechaLimite);
-    const hoy = new Date();
-    
-    if (hoy > fechaLimite && realizada) {
-      return res.status(400).json({ error: 'No se puede marcar una tarea vencida como realizada' });
-    }
-    
-    const tareaActualizada = await prisma.tareas.update({
-      where: { id },
-      data: { realizada }
+    // Actualizar estadísticas del alumno
+    const tarea = await prisma.tarea.findUnique({
+      where: { id: tareaId }
     });
     
-    await actualizarEstadisticas(userId || tarea.userId, nivel || tarea.nivel);
-    res.json(tareaActualizada);
+    if (tarea) {
+      await actualizarEstadisticas(userId, tarea.nivel);
+    }
+    
+    res.json(entrega);
   } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar estado de tarea' });
+    res.status(500).json({ error: 'Error al entregar tarea' });
   }
 });
 
@@ -176,15 +169,19 @@ router.patch('/:id/realizada', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const tarea = await prisma.tareas.findUnique({ where: { id } });
+    const tarea = await prisma.tarea.findUnique({ where: { id } });
     
     if (tarea && tarea.tarea.includes('cloudinary')) {
       const publicId = tarea.tarea.split('/').slice(-2).join('/').split('.')[0];
       await cloudinary.uploader.destroy(publicId);
     }
     
-    await prisma.tareas.delete({ where: { id } });
-    if (tarea) await actualizarEstadisticas(tarea.userId, tarea.nivel);
+    // Eliminar también las entregas asociadas
+    await prisma.entregaTarea.deleteMany({
+      where: { tareaId: id }
+    });
+    
+    await prisma.tarea.delete({ where: { id } });
     
     res.json({ message: 'Tarea eliminada correctamente' });
   } catch (error) {
@@ -192,19 +189,47 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// Obtener estadísticas
+// Obtener estadísticas por alumno
 router.get('/estadisticas/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     const { nivel } = req.query;
     
     const estadisticas = await prisma.estadisticasTareas.findUnique({
-      where: { userId_nivel: { userId, nivel: nivel as string } }
+      where: {
+        userId_nivel: {
+          userId,
+          nivel: nivel as string
+        }
+      }
     });
     res.json(estadisticas);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener estadísticas' });
   }
 });
+
+async function actualizarEstadisticas(userId: string, nivel: string) {
+  const totalTareas = await prisma.entregaTarea.count({
+    where: {
+      userId,
+      tarea: { nivel, activo: true }
+    }
+  });
+  
+  const tareasRealizadas = await prisma.entregaTarea.count({
+    where: {
+      userId,
+      realizada: true,
+      tarea: { nivel, activo: true }
+    }
+  });
+  
+  await prisma.estadisticasTareas.upsert({
+    where: { userId_nivel: { userId, nivel } },
+    update: { totalTareas, tareasRealizadas, ultimaActualizacion: new Date() },
+    create: { userId, nivel, totalTareas, tareasRealizadas }
+  });
+}
 
 export default router;
