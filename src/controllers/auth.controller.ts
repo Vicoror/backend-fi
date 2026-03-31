@@ -10,18 +10,18 @@ const prisma = new PrismaClient();
 interface AuthRequest extends Request {
   user?: {
     id: string;
-    email: string;
+    folio: string;
     role: string;
   };
 }
 
 export const login = async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { folio, password } = req.body;
     
     // Validar que email y password existan
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Email y contraseña son requeridos' });
+    if (!folio || !password) {
+      return res.status(400).json({ message: 'Folio y contraseña son requeridos' });
     }
     
     // Buscar usuario
