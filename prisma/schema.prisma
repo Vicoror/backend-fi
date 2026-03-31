@@ -20,6 +20,9 @@ model User {
   payments      Payment[]
   profile       Profile?
   purchases     Purchase[]
+  tareas            Tareas[]
+  examenes          Examenes[]
+  estadisticasTareas EstadisticasTareas[]
 }
 
 model Profile {
@@ -54,6 +57,8 @@ model Course {
   teacher          User?        @relation("TeacherCourses", fields: [teacherId], references: [id])
   enrollments      Enrollment[]
   purchases        Purchase[]
+  tareas            Tareas[]
+  examenes          Examenes[]
 }
 
 model Enrollment {
@@ -167,7 +172,7 @@ model Tema {
   material  String?  // PDF o link principal
   orden     Int
 
-  temario   Temario  @relation(fields: [temarioId], references: [id])
+  temario   Temario  @relation(fields: [temarioId], references: [id], onDelete: Cascade)
   subtemas  Subtema[]
 }
 
@@ -180,7 +185,73 @@ model Subtema {
   material String
   orden    Int
 
-  tema     Tema     @relation(fields: [temaId], references: [id])
+  tema     Tema     @relation(fields: [temaId], references: [id], onDelete: Cascade)
+}
+
+model Tareas {
+  id            String   @id @default(uuid())
+  userId        String
+  nivel         String
+  tipo          TipoTarea
+  tarea         String   // URL o ruta del archivo
+  fechaLimite   DateTime
+  activo        Boolean  @default(true)
+  realizada     Boolean  @default(false)  // Casilla para marcar tarea realizada
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relaciones
+  user          User     @relation(fields: [userId], references: [id])
+  course        Course?  @relation(fields: [courseId], references: [id])
+  courseId      String?
+  
+  @@index([userId])
+  @@index([courseId])
+  @@index([nivel])
+}
+
+model Examenes {
+  id                 String   @id @default(uuid())
+  userId             String
+  nivel              String
+  examen             String   // URL o ruta del archivo
+  calificacionExamen Float?   // Calificación individual del examen
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  
+  // Relaciones
+  user               User     @relation(fields: [userId], references: [id])
+  course             Course?  @relation(fields: [courseId], references: [id])
+  courseId           String?
+  
+  @@index([userId])
+  @@index([courseId])
+  @@index([nivel])
+}
+
+model EstadisticasTareas {
+  id                    String   @id @default(uuid())
+  userId                String
+  nivel                 String
+  totalTareas           Int      @default(0)
+  tareasRealizadas      Int      @default(0)
+  ultimaActualizacion   DateTime @default(now())
+  
+  // Relaciones
+  user                  User     @relation(fields: [userId], references: [id])
+  
+  @@unique([userId, nivel])
+  @@index([userId])
+}
+
+enum TipoTarea {
+  Grammaire
+  ProductionOrale
+  ProductionEcrite
+  ComprehensionOrale
+  ComprehensionEcrite
+  Vocabulaire
+  Varios
 }
 
 enum TipoSubtema {

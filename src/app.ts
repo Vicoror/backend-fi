@@ -16,6 +16,8 @@ import carruselRoutes from './routes/carrusel.routes';
 import emailRoutes from './routes/email.routes'
 import claseMuestraRoutes from './routes/claseMuestraRoutes';
 import temariosRoutes from './routes/temarios.routes';
+import tareasRoutes from './routes/tareas';
+import examenesRoutes from './routes/examenes';
 // ❌ NO importar cloudinarySignatureRoutes desde ./api/
 
 const app = express();
@@ -106,6 +108,8 @@ app.use('/auth', authRoutes);
 app.use('/usuarios', verificarEmailRoutes);
 app.use('/auth', passwordRoutes);
 app.use('/api', temariosRoutes);
+app.use('/api/tareas', tareasRoutes);
+app.use('/api/examenes', examenesRoutes);
 
 // 🟣 CUARTO: Rutas específicas
 app.use('/registro', registroRoutes);
