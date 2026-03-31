@@ -26,7 +26,7 @@ export const login = async (req: Request, res: Response) => {
     
     // Buscar usuario
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { folio },
       include: { profile: true }
     });
     
