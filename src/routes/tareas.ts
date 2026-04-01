@@ -131,6 +131,97 @@ router.post('/', upload.single('archivo'), async (req, res) => {
   }
 });
 
+// Actualizar tarea (Admin)
+router.put('/:id', upload.single('archivo'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nivel, tipo, titulo, descripcion, fechaLimite, courseId, activo, linkExterno, eliminarArchivo } = req.body;
+    
+    // Buscar la tarea existente
+    const tareaExistente = await prisma.tarea.findUnique({
+      where: { id }
+    });
+    
+    if (!tareaExistente) {
+      return res.status(404).json({ error: 'Tarea no encontrada' });
+    }
+    
+    let tareaUrl = tareaExistente.tarea;
+    
+    // Manejar eliminación de archivo
+    if (eliminarArchivo === 'true' && tareaExistente.tarea.includes('cloudinary')) {
+      const publicId = tareaExistente.tarea.split('/').slice(-2).join('/').split('.')[0];
+      await cloudinary.uploader.destroy(publicId);
+      tareaUrl = '';
+    }
+    
+    // Manejar nueva subida de archivo
+    if (req.file) {
+      // Eliminar archivo anterior si existe en Cloudinary
+      if (tareaExistente.tarea.includes('cloudinary')) {
+        const publicId = tareaExistente.tarea.split('/').slice(-2).join('/').split('.')[0];
+        await cloudinary.uploader.destroy(publicId);
+      }
+      const result = await uploadToCloudinary(req.file.buffer, 'tareas');
+      tareaUrl = result;
+    } 
+    // Manejar link externo
+    else if (linkExterno) {
+      tareaUrl = linkExterno;
+    }
+    
+    // Actualizar la tarea
+    const tareaActualizada = await prisma.tarea.update({
+      where: { id },
+      data: {
+        nivel: nivel || tareaExistente.nivel,
+        tipo: tipo || tareaExistente.tipo,
+        titulo: titulo || tareaExistente.titulo,
+        descripcion: descripcion !== undefined ? descripcion : tareaExistente.descripcion,
+        tarea: tareaUrl,
+        fechaLimite: fechaLimite ? new Date(fechaLimite) : tareaExistente.fechaLimite,
+        activo: activo !== undefined ? activo === 'true' : tareaExistente.activo,
+        courseId: courseId || tareaExistente.courseId
+      }
+    });
+    
+    // Si se cambió el nivel, actualizar entregas
+    if (nivel && nivel !== tareaExistente.nivel) {
+      // Eliminar entregas antiguas
+      await prisma.entregaTarea.deleteMany({
+        where: { tareaId: id }
+      });
+      
+      // Crear nuevas entregas para los alumnos del nuevo nivel
+      const alumnosDelNivel = await prisma.user.findMany({
+        where: {
+          enrollments: {
+            some: {
+              course: {
+                nivel: nivel
+              }
+            }
+          }
+        }
+      });
+      
+      await prisma.entregaTarea.createMany({
+        data: alumnosDelNivel.map(alumno => ({
+          tareaId: id,
+          userId: alumno.id,
+          realizada: false
+        }))
+      });
+    }
+    
+    res.json(tareaActualizada);
+    
+  } catch (error) {
+    console.error('Error al actualizar tarea:', error);
+    res.status(500).json({ error: 'Error al actualizar tarea' });
+  }
+});
+
 // Marcar tarea como realizada (Alumno)
 router.patch('/entregar/:tareaId', async (req, res) => {
   try {

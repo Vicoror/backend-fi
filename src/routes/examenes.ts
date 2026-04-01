@@ -138,6 +138,96 @@ router.post('/', upload.single('archivo'), async (req, res) => {
   }
 });
 
+// Actualizar examen (Admin)
+router.put('/:id', upload.single('archivo'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nivel, titulo, descripcion, fechaLimite, courseId, activo, linkExterno, eliminarArchivo } = req.body;
+    
+    // Buscar el examen existente
+    const examenExistente = await prisma.examen.findUnique({
+      where: { id }
+    });
+    
+    if (!examenExistente) {
+      return res.status(404).json({ error: 'Examen no encontrado' });
+    }
+    
+    let examenUrl = examenExistente.examen;
+    
+    // Manejar eliminación de archivo
+    if (eliminarArchivo === 'true' && examenExistente.examen.includes('cloudinary')) {
+      const publicId = examenExistente.examen.split('/').slice(-2).join('/').split('.')[0];
+      await cloudinary.uploader.destroy(publicId);
+      examenUrl = '';
+    }
+    
+    // Manejar nueva subida de archivo
+    if (req.file) {
+      // Eliminar archivo anterior si existe en Cloudinary
+      if (examenExistente.examen.includes('cloudinary')) {
+        const publicId = examenExistente.examen.split('/').slice(-2).join('/').split('.')[0];
+        await cloudinary.uploader.destroy(publicId);
+      }
+      const result = await uploadToCloudinary(req.file.buffer, 'examenes');
+      examenUrl = result;
+    } 
+    // Manejar link externo
+    else if (linkExterno) {
+      examenUrl = linkExterno;
+    }
+    
+    // Actualizar el examen
+    const examenActualizado = await prisma.examen.update({
+      where: { id },
+      data: {
+        nivel: nivel || examenExistente.nivel,
+        titulo: titulo || examenExistente.titulo,
+        descripcion: descripcion !== undefined ? descripcion : examenExistente.descripcion,
+        examen: examenUrl,
+        fechaLimite: fechaLimite ? new Date(fechaLimite) : examenExistente.fechaLimite,
+        activo: activo !== undefined ? activo === 'true' : examenExistente.activo,
+        courseId: courseId || examenExistente.courseId
+      }
+    });
+    
+    // Si se cambió el nivel, actualizar calificaciones
+    if (nivel && nivel !== examenExistente.nivel) {
+      // Eliminar calificaciones antiguas
+      await prisma.calificacionExamen.deleteMany({
+        where: { examenId: id }
+      });
+      
+      // Crear nuevas calificaciones para los alumnos del nuevo nivel
+      const alumnosDelNivel = await prisma.user.findMany({
+        where: {
+          enrollments: {
+            some: {
+              course: {
+                nivel: nivel
+              }
+            }
+          }
+        }
+      });
+      
+      await prisma.calificacionExamen.createMany({
+        data: alumnosDelNivel.map(alumno => ({
+          examenId: id,
+          userId: alumno.id,
+          entregado: false
+        }))
+      });
+    }
+    
+    res.json(examenActualizado);
+    
+  } catch (error) {
+    console.error('Error al actualizar examen:', error);
+    res.status(500).json({ error: 'Error al actualizar examen' });
+  }
+});
+
 // Actualizar calificación de un alumno (Admin)
 router.patch('/calificar/:examenId/:userId', async (req, res) => {
   try {
